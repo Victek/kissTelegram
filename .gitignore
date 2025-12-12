@@ -1,22 +1,67 @@
-### AL ###
-#Template for AL projects for Dynamics 365 Business Central
-#launch.json folder
+# ========================================
+# CRITICAL: Never commit credentials!
+# ========================================
+system_setup.h
+**/system_setup.h
+
+# ========================================
+# Arduino/PlatformIO Build Artifacts
+# ========================================
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+# Build directories
+build/
+.build/
+.pio/
+.pioenvs/
+.piolibdeps/
+lib/
 .vscode/
-#Cache folder
-.alcache/
-#Symbols folder
-.alpackages/
-#Snapshots folder
-.snapshots/
-#Testing Output folder
-.output/
-#Extension App-file
-*.app
-#Rapid Application Development File
-rad.json
-#Translation Base-file
-*.g.xlf
-#License-file
-*.flf
-#Test results file
-TestResults.xml
+.clang_complete
+.gcc-flags.json
+
+# ========================================
+# IDE/Editor Files
+# ========================================
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Arduino IDE
+*.bak
+*.tmp
+*.swp
+*~
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ========================================
+# OS-Specific Files
+# ========================================
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ========================================
+# Temporary/Log Files
+# ========================================
+*.log
+*.tmp
+*.temp
+debug.log
+serial_output.txt
+
+# ========================================
+# Keep These Template Files
+# ========================================
+# Ensure template files are committed
+!system_setup_template.h
