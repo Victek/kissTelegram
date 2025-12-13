@@ -1,0 +1,29 @@
+# Archivos de configuración con credenciales
+system_setup.h
+
+# Claude Code
+.claude/
+
+# Archivos de compilación Arduino/PlatformIO
+*.elf
+*.bin
+*.hex
+*.map
+build/
+.pio/
+.vscode/
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Archivos temporales
+*.tmp
+*.bak
+*.old
