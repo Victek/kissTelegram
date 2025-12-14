@@ -58,7 +58,7 @@ This is why the two-upload process is required: **the partition table changes be
 
 **Method 1: Using a Bot (Easiest)**
 
-1. Search for `@userinfobot` in Telegram
+1. Search for `@ChatIDHelperBot` in Telegram
 2. Start conversation with `/start`
 3. It will reply with your **Chat ID** (a number like `123456789`)
 4. **Save this number** - you'll need it in configuration
