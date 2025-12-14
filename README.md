@@ -95,8 +95,10 @@ To use this partition scheme:
 1. Copy `partitions.csv` to your project directory
 2. In Arduino IDE: Tools → Partition Scheme → Custom
 3. In PlatformIO: `board_build.partitions = partitions.csv`
+4. In Platformio: `platformio.ini` in /src folder
 
 ---
+
 
 ## Quick Start
 

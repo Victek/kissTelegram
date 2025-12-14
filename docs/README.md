@@ -20,7 +20,7 @@
 ---
 
 > 🚨 **FIRST TIME USING ESP32-S3 WITH KISSTELEGRAM?**
-> **READ THIS FIRST:** [**GETTING_STARTED.md**](GETTING_STARTED.md) ⚠️ Available in 7 languages !!.
+> **READ THIS FIRST:** [**GETTING_STARTED.md**](docs/GETTING_STARTED.md) ⚠️ Available in 7 languages !!.
 > ESP32-S3 requires a **two-step upload process** due to custom partitions. Skipping this guide will cause boot errors!
 
 ---
@@ -95,8 +95,10 @@ To use this partition scheme:
 1. Copy `partitions.csv` to your project directory
 2. In Arduino IDE: Tools → Partition Scheme → Custom
 3. In PlatformIO: `board_build.partitions = partitions.csv`
+4. In Platformio: `platformio.ini` in /src folder
 
 ---
+
 
 ## Quick Start
 
