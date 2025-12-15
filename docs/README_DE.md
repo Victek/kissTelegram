@@ -5,37 +5,37 @@
 ![Version](https://img.shields.io/badge/version-1.x-green.svg)
 ![Language](https://img.shields.io/badge/languages-7-brightgreen.svg)
 
-**Deutsch** | [Dokumentation](GETTING_STARTED_DE.md) | [Benchmarks](BENCHMARK.md)
+**Deutsch** | [Dokumentation](docs/GETTING_STARTED_DE.md) | [Benchmarks](docs/BENCHMARK.md)
 
 ---
 
-> 🚨 **ERSTE VERWENDUNG MIT ESP32-S3 UND KISSTELEGRAM?**
-> **LESEN SIE DIES ZUERST:** [**GETTING_STARTED_DE.md**](GETTING_STARTED_DE.md) ⚠️
-> ESP32-S3 erfordert einen **zweistufigen Upload-Prozess** aufgrund benutzerdefinierter Partitionen. Das Überspringen dieser Anleitung führt zu Boot-Fehlern!
+> **ERSTE VERWENDUNG VON ESP32-S3 MIT KISSTELEGRAM?**
+> **LESEN SIE DIES ZUERST:** [**GETTING_STARTED_DE.md**](docs/GETTING_STARTED_DE.md)
+> ESP32-S3 erfordert einen **zweistufigen Upload-Prozess** aufgrund benutzerdefinierter Partitionen. Das Ignorieren dieser Anleitung führt zu Boot-Fehlern und falschen Partitionen!
 
 ---
 
-## Eine robuste, unternehmensgerechte Telegram-Bot-Bibliothek für ESP32-S3
+## Eine Robuste Enterprise-Grade-Bibliothek für Telegram-Bots auf ESP32-S3
 
-KissTelegram ist die **einzige ESP32-Telegram-Bibliothek**, die von Grund auf für Mission-Critical-Anwendungen entwickelt wurde. Im Gegensatz zu anderen Bibliotheken, die auf der Arduino-`String`-Klasse basieren (verursacht Speicherfragmentierung und Speicherlecks), verwendet KissTelegram reine `char[]`-Arrays für absolut zuverlässige Stabilität.
+KissTelegram ist die **einzige Telegram-Bibliothek für ESP32**, die von Grund auf für unternehmenskritische Anwendungen entwickelt wurde. Im Gegensatz zu anderen Bibliotheken, die auf Arduinos `String`-Klasse angewiesen sind (was zu Speicherfragmentierung und Lecks führt), verwendet KissTelegram reine `char[]`-Arrays für unerschütterliche Stabilität.
 
 ### Warum KissTelegram?
 
-- Müde von verlorenen Projekten durch schwache Bibliotheken, Speicherlecks, Last-Minute-Lösungen, mangelnde Unterstützung, leere Versprechungen, Neustarts....
+- Müde von verlorenen Projekten wegen schwacher Bibliotheken, Speicherlecks, Last-Minute-Lösungen, fehlendem Support, leeren Worten, Begriffen die nicht funktionieren, Neustarts....
 
-- Meine Vision, jetzt die Fakten:
+- Das war meine Vision und Erfahrung mit anderen Bibliotheken und das ist das Ergebnis mit KissTelegram:
 
-- **Null Nachrichtenverlust**: Persistente LittleFS-Warteschlange übersteht Abstürze, Neustarts und WiFi-Fehler
-- **Keine Speicherlecks**: Reine `char[]`-Implementierung, keine String-Fragmentierung
-- **SSL/TLS-Sicherheit**: Sichere Verbindungen zur Telegram-API mit Zertifikatvalidierung
-- **intelligente Energieverwaltung**: 6 Energiesparmodi (BOOT, LOW, IDLE, ACTIVE, TURBO, MAINTENANCE)
-- **Nachrichtenpriorisierungen**: CRITICAL, HIGH, NORMAL, LOW mit intelligenter Warteschlangenverwaltung
+- **Null Nachrichtenverlust**: Persistente Warteschlange auf LittleFS, die Abstürze, Neustarts und WiFi-Ausfälle überlebt
+- **Keine Speicherlecks**: Pure `char[]`-Implementierung, keine String-Fragmentierung
+- **SSL/TLS-Sicherheit**: Sichere Verbindungen zur Telegram-API mit Zertifikatsvalidierung (bis 2035)
+- **Intelligentes Energiemanagement**: 6 Energiemodi (BOOT, LOW, IDLE, ACTIVE, TURBO, MAINTENANCE)
+- **Nachrichtenprioritäten**: CRITICAL, HIGH, NORMAL, LOW mit intelligenter Warteschlangenverwaltung
 - **Turbo-Modus**: Batch-Verarbeitung für große Nachrichtenwarteschlangen (0,9 msg/s)
-- **Mehrsprachige i18n**: Kompilierzeit-Sprachauswahl (7 Sprachen, kein Laufzeit-Overhead)
-- **Enterprise-OTA**: Dual-Boot-Firmware-Updates mit automatischem Rollback und Sicherheits-Gateway
-- **100% Flash-Auslastung**: Benutzerdefiniertes Partitionsschema maximiert den 16MB-Flash des ESP32-S3
-- **Sicherer als Espressif OTA**: PIN/PUK-Authentifizierung, Checksum-Verifizierung, 60-sekündiges Validierungsfenster
-- **Unabhängig von externen Bibliotheken**: Alles von Grund auf selbst entwickelt, eigener JSON-Parser.
+- **Mehrsprachiges i18n**: Sprachauswahl zur Kompilierzeit für Nachrichtenversand (7 Sprachen, null Laufzeit-Overhead)
+- **Enterprise-OTA**: Dual-Boot-Firmware-Updates mit automatischem Rollback und Sicherheitsverwaltung
+- **100% Flash-Auslastung**: Benutzerdefiniertes Partitionsschema, das die 16MB Flash des ESP32-S3 maximiert
+- **Sicherer als Espressif OTA**: PIN/PUK-Authentifizierung, Prüfsummenverifizierung, 60s Validierungsfenster
+- **Unabhängig von externen Bibliotheken**: Alles von Grund auf neu erstellt, eigener JSON-Parser für KissTelegram-Bibliotheken.
 
 ---
 
@@ -51,9 +51,9 @@ KissTelegram ist die **einzige ESP32-Telegram-Bibliothek**, die von Grund auf f�
 
 ### Arduino IDE
 
-1. Dieses Repository als ZIP herunterladen
-2. Arduino IDE öffnen → Sketch → Include Library → Add .ZIP Library
-3. Die heruntergeladene Datei auswählen
+1. Laden Sie dieses Repository als ZIP herunter
+2. Öffnen Sie Arduino IDE → Sketch → Include Library → Add .ZIP Library
+3. Wählen Sie die heruntergeladene Datei aus
 
 ### PlatformIO
 
@@ -68,7 +68,7 @@ lib_deps =
 
 ## Benutzerdefiniertes Partitionsschema
 
-KissTelegram enthält ein optimiertes `partitions.csv`, das die Flash-Nutzung maximiert:
+KissTelegram enthält eine optimierte `partitions.csv`, die die Flash-Nutzung maximiert:
 
 ```csv
 # Name,   Type, SubType, Offset,  Size
@@ -79,16 +79,16 @@ app1,     app,  ota_0,   0x190000,0x180000,   # 1.5MB
 spiffs,   data, spiffs,  0x310000,0xCF0000,   # 13MB!
 ```
 
-**13MB SPIFFS-Speicher** - das sind 8MB mehr als Espressifs Standard-Schemas!
+**13MB SPIFFS-Speicher** - Das sind 8MB mehr als Espressifs Standardschemata!
 
 Um dieses Partitionsschema zu verwenden:
 1. Kopieren Sie `partitions.csv` in Ihr Projektverzeichnis
-2. In Arduino IDE: Tools → Partition Scheme → Custom
+2. In Arduino IDE: Tools ->Partition Scheme ->Custom
 3. In PlatformIO: `board_build.partitions = partitions.csv`
 
 ---
 
-## Schnelleinstieg
+## Schnellstart
 
 ### Grundlegendes Beispiel
 
@@ -134,7 +134,7 @@ void loop() {
 }
 ```
 
-### OTA-Updates Beispiel
+### OTA-Update-Beispiel
 
 ```cpp
 #include "KissOTA.h"
@@ -170,64 +170,64 @@ void loop() {
 
 **OTA-Prozess:**
 1. Senden Sie `/ota` an Ihren Bot
-2. Geben Sie PIN mit `/otapin IHR_PIN` ein
-3. Laden Sie die `.bin`-Firmware-Datei hoch
-4. Der Bot überprüft die Checksumme automatisch
+2. Geben Sie die PIN mit `/otapin YOUR_PIN` ein
+3. Laden Sie die `.bin` Firmware-Datei hoch
+4. Der Bot verifiziert automatisch die Prüfsumme
 5. Bestätigen Sie mit `/otaconfirm`
 6. Nach dem Neustart validieren Sie mit `/otaok` innerhalb von 60 Sekunden
-7. Automatisches Rollback bei Validierungsfehlschlag!
+7. Automatisches Rollback bei fehlgeschlagener Validierung!
 
 - Lesen Sie Readme_KissOTA.md in Ihrer bevorzugten Sprache, um mehr über die Lösung zu erfahren.
 
 ---
 
-## Wichtigste Features erklärt
+## Wichtige Funktionen Erklärt
 
 ### 1. Persistente Nachrichtenwarteschlange
 
-Nachrichten werden in LittleFS mit automatischem Batch-Löschen gespeichert:
+Nachrichten werden auf LittleFS mit automatischer Batch-Löschung gespeichert:
 
 ```cpp
 bot.queueMessage(chat_id, "Important message", KissTelegram::PRIORITY_HIGH);
 ```
 
-- Übersteht Abstürze, WiFi-Unterbrechungen, Neustarts
-- Wiederholte Versuche bei fehlgeschlagenen Sendevorgängen
-- Intelligentes Batch-Löschen (alle 10 Nachrichten + bei leerer Warteschlange)
-- Garantie für Null Nachrichtenverlust
+- Überlebt Abstürze, WiFi-Trennungen, Neustarts
+- Automatische Wiederholung fehlgeschlagener Sendevorgänge
+- Intelligente Batch-Löschung (alle 10 Nachrichten + wenn Warteschlange leer ist)
+- Garantie für null Nachrichtenverlust
 
 ### 2. Energieverwaltung
 
-6 intelligente Energiesparmodi passen sich den Anforderungen Ihrer Anwendung an:
+6 intelligente Energiemodi passen sich den Anforderungen Ihrer Anwendung an:
 
 ```cpp
 bot.setPowerMode(KissTelegram::POWER_ACTIVE);
 bot.setPowerConfig(30, 60, 10); // idle, decay, boot stable times
 ```
 
-- **POWER_BOOT**: Initiale Startphase (10s)
+- **POWER_BOOT**: Anfängliche Startphase (10s)
 - **POWER_LOW**: Minimale Aktivität, langsames Polling
 - **POWER_IDLE**: Keine kürzliche Aktivität, reduzierte Überprüfungen
 - **POWER_ACTIVE**: Normaler Betrieb
-- **POWER_TURBO**: Hochgeschwindigkeits-Batch-Verarbeitung (50ms-Intervalle)
-- **POWER_MAINTENANCE**: Manueller Überschreibung für Updates
-- **Decay Timing für sanfte Umschaltung**
+- **POWER_TURBO**: Hochgeschwindigkeits-Batch-Verarbeitung (50ms Intervalle)
+- **POWER_MAINTENANCE**: Manuelles Override für Updates
+- **Abkling-Timing für sanfte Übergänge**
 
-### 3. Nachrichtenpriorisierungen
+### 3. Nachrichtenprioritäten
 
-Vier Prioritätsstufen stellen sicher, dass kritische Nachrichten zuerst gesendet werden:
+Vier Prioritätsstufen stellen sicher, dass kritische Nachrichten zuerst gesendet werden und niedrigere Prioritäten überspringen:
 
 ```cpp
 bot.sendMessage(chat_id, "Normal message", KissTelegram::PRIORITY_NORMAL);
 bot.sendMessage(chat_id, "Alert!", KissTelegram::PRIORITY_CRITICAL);
 ```
 
-Warteschlange verarbeitet: **CRITICAL → HIGH → NORMAL → LOW**
-Interne Prozesse: **OTAMODE → MAINTENANCEMODE**
+Warteschlange verarbeitet: **CRITICAL /HIGH /NORMAL /LOW**
+Interne Prozesse: **OTAMODE /MAINTENANCEMODE**
 
 ### 4. SSL/TLS-Sicherheit
 
-Sichere Verbindungen mit Zertifikatvalidierung:
+Sichere Verbindungen mit Zertifikatsvalidierung (bis 2035):
 
 ```cpp
 bool secure = bot.isSSLSecure();
@@ -235,22 +235,22 @@ String sslInfo = bot.getSSLInfo();
 bot.testSSLConnection();
 ```
 
-- Automatisches sicheres/unsicheres Fallback
-- Regelmäßige Ping-Überprüfungen zur Verbindungsaufrechterhaltung
-- Wiederverwendbar Code speichert Verbindungs-Header für höchsten Durchsatz
+- Automatischer Fallback zwischen sicher und unsicher
+- Periodische Ping-Überprüfungen zur Aufrechterhaltung der Verbindung
+- Wiederverwendbarer Verbindungscode spart Verbindungs-Overhead für maximale Leistung
 
 ### 5. Turbo-Modus
 
-Aktiviert sich automatisch, wenn die Warteschlange > 100 Nachrichten enthält:
+Wird automatisch aktiviert beim Senden von Batches mit dem Befehl /llenar:
 
 ```cpp
-bot.enableTurboMode();  // Manuelle Aktivierung
+bot.enableTurboMode();  // Auto activation
 ```
 
 - Verarbeitet 10 Nachrichten pro Zyklus
-- 50ms-Intervalle zwischen Batches
-- Erreicht 15-20 msg/s Durchsatz
-- Deaktiviert sich automatisch, wenn die Warteschlange leer ist
+- 50ms Intervalle zwischen Batches
+- Erreicht 0,9 msg/s Durchsatz
+- Deaktiviert sich automatisch, wenn Warteschlange gesendet ist
 
 ### 6. Betriebsmodi
 
@@ -265,9 +265,9 @@ bot.setOperationMode(KissTelegram::MODE_RELIABILITY);
 - **MODE_POWERSAVE**: Langsam (Polling: 30s, Wiederholung: 2)
 - **MODE_RELIABILITY**: Robust (Polling: 15s, Wiederholung: 5)
 
-### 7. Diagnosen
+### 7. Diagnose
 
-Umfassende Überwachung und Fehlerbehebung:
+Vollständige Überwachung und Fehlerbehebung:
 
 ```cpp
 bot.printDiagnostics();
@@ -276,83 +276,100 @@ bot.printPowerStatistics();
 bot.printSystemStatus();
 ```
 
-Zeigt an:
+Zeigt:
 - Freier Speicher (Heap/PSRAM)
 - Nachrichtenwarteschlangen-Statistiken
 - Verbindungsqualität
 - Energiemodus-Verlauf
-- Speicherauslastung
+- Speichernutzung
 - Betriebszeit
 
 ---
 
 ## 8. WiFi-Verwaltung
-- Integrierter WiFi-Manager triggert andere Aufgaben, bis WiFi stabil ist
-- Verhindert Race Conditions
-- Behauptet, dass laufende Nachrichten bis zur Wiederherstellung der Verbindung im Dateisystem gespeichert werden, kann bis zu 3500 Nachrichten speichern (Standard, aber leicht erweiterbar)
-- Verbindungsqualitätsüberwachung (EXCELLENT, GOOD, FAIR, POOR, DEAD) und RSSI-Ausgabepegel
-- Sie müssen sich nur um Ihren Sketch kümmern, nutzen Sie KissTelegram für den Rest
+- Integrierter WiFi-Manager aktiviert andere Aufgaben nur, wenn WiFi stabil ist
+- Verhindert Race-Conditions
+- Holt laufende Nachrichten zum FS-Speicher zurück, bis Verbindung wiederhergestellt ist, kann bis zu 3500 msg halten (Standard aber leicht erweiterbar, hängt davon ab, wie viel Platz Sie nutzen möchten)
+- Überwachung der Verbindungsqualität (EXCELLENT, GOOD, FAIR, POOR, DEAD) und RSSI-Ausgabepegel
+- Sie müssen sich nur um Ihren Sketch kümmern, fügen Sie Ihren Code hinzu und KissTelegram übernimmt die kritischen Aufgaben, WiFi, SSL, Nachrichten, OTA, Energieverwaltung, Prioritäten.. all die Arbeit, die Sie sparen....
 
 ---
 
-## 9. Killer-Feature: `/estado`-Befehl
+## 9. Schlüsselfunktion: `/estado` Befehl
 
-**Das mächtigste Debugging-Tool, das Sie jemals verwenden werden:**
+**Das leistungsstärkste Debugging-Tool, das Sie jemals in Ihren Sketch einbauen werden**
 
-Senden Sie `/estado` an Ihren Bot und erhalten Sie in Sekunden einen **vollständigen Gesundheitsbericht**:
+Senden Sie `/estado` an Ihren Bot und erhalten Sie einen **vollständigen Gesundheitsbericht Ihres Sketches** in diesem Moment, (verfügbar in 7 Sprachen):
 
 ```
-📦 KissTelegram v1.x.x
-🎯 SYSTEM-ZUVERLÄSSIGKEIT
-✅ System: RELIABLE
-✅ Gesendete Nachrichten: 5.234
-💾 Ausstehende Nachrichten: 0
-📡 WiFi-Signal: -59 dBm (Gut)
-🔌 WiFi-Neukonnexionen: 2
-⏱️ Betriebszeit: 86.400 Sekunden (24h)
-💾 Freier Speicher: 223 KB
-📊 Warteschlangen-Statistiken: Alle Systeme funktionsfähig
+KissTelegram_test, [15/12/2025 13:11]
+🔧 KissTelegram v0.9.0
+📦 Build: Dec 15 2025 13:10:23 (0xD984C13E)
+
+✅ SYSTEMZUVERLÄSSIGKEIT
+✓ System: ZUVERLÄSSIG
+✓ Gesendete Nachrichten: 940
+📨 Ausstehende Nachrichten: 70
+✓ Verlorene Nachrichten: 0
+🗑️ Verworfene (volle Warteschlange): 0
+
+⚠️ ÄUSSERE WIDRIGKEITEN
+⚠️ Gesamtfehler: 0
+🔄 Wiederhergestellt (Fallback): 0
+📡 WiFi-Ausfälle: 0
+
+📊 TECHNISCHE INFORMATIONEN
+⏱️ Betriebszeit: 0h 0m
+🧠 Freies RAM: 223960 bytes
+💾 Freies PSRAM: 1027820 bytes
+💽 Freies FS: 13549568 bytes
+📦 Max. in FS: 3500 Nachrichten
+⚡ Energiemodus: 3 
+📶 WiFi-Signal: -64 dBm (Mäßig)
+🔒 SSL: SICHER
+🚀 Turbo: INAKTIV
+🤖 Auto-Nachrichten: JA
+
 ```
 
-**Warum `/estado` ist unverzichtbar:**
-- ✅ Sofortige Systemgesundheitsprüfung
-- ✅ WiFi-Qualitätsüberwachung (Diagnosekonnektivitätsprobleme)
-- ✅ Speicherleck-Erkennung (beobachten Sie freien Heap)
-- ✅ Nachrichtenwarteschlangen-Status (ausstehende/fehlgeschlagene Nachrichten anzeigen)
-- ✅ Betriebszeit-Tracking (Stabilitätsüberwachung)
-- ✅ Verfügbar in 7 Sprachen
-- ✅ Ihr erstes Tool beim Beheben von Problemen
+**Warum `/estado` unverzichtbar ist:**
+- Sofortige Systemgesundheitsprüfung
+- WiFi-Qualitätsüberwachung (Konnektivitätsprobleme diagnostizieren)
+- Speicherleck-Erkennung (freien Heap beobachten)
+- Nachrichtenwarteschlangen-Status (ausstehende/fehlgeschlagene Nachrichten sehen)
+- Betriebszeit-Tracking (Stabilitätsüberwachung)
+- Ihr erstes Diagnose-Tool
 
-**Pro-Tipp:** Machen Sie `/estado` zu Ihrer ersten Nachricht nach jedem Firmware-Update, um zu überprüfen, ob alles funktioniert!
+**Profi-Tipp:** Machen Sie `/estado` zu Ihrer ersten Nachricht nach jedem Firmware-Update, um zu überprüfen, dass alles funktioniert!
 
 ---
 
 ## 10. NTP
-- Eigener Code zum Synchronisieren/Resynchronisieren für SSL und Scheduler (Enterprise Edition)
+- Eigener Code zum Synchronisieren/Resynchronisieren für SSL. GNSS, LTE und Scheduler (Enterprise Edition)
 ---
 
 ## 11. Dokumentation (7 Sprachen)
 
-- **[GETTING_STARTED_DE.md](GETTING_STARTED_DE.md)** - **BEGINNEN SIE HIER!** Vollständiger Leitfaden von der Erstinbetriebnahme des ESP32-S3 bis zur ersten Telegram-Nachricht
-- **[README_DE.md](README_DE.md)** (diese Datei) - Feature-Übersicht, Schnelleinstieg, API-Referenz
-- **[BENCHMARK.md](BENCHMARK.md)** - Technischer Vergleich mit 6 anderen Telegram-Bibliotheken (nur Englisch)
-- **[README_KissOTA_XX.md](README_KissOTA_DE.md)** - OTA-Update-System-Dokumentation (7 Sprachen: EN, ES, FR, IT, DE, PT, CN)
+- **[GETTING_STARTED_DE.md](docs/GETTING_STARTED_DE.md)** - **HIER BEGINNEN!** Vollständige Anleitung vom Erhalt des ESP32-S3 bis zur ersten an Telegram gesendeten Nachricht
+- **[README_DE.md](docs/README_DE.md)** (diese Datei) - Funktionsübersicht, Schnellstart, API-Referenz
+- **[BENCHMARK.md](docs/BENCHMARK.md)** - Technischer Vergleich mit 6 Telegram-Bibliotheken (nur Englisch, aber selbsterklärend)
+- **[README_KissOTA_XX.md](docs/README_KissOTA_DE.md)** - Großer Wert, da es die Schritte des OTA-Update-Systems detailliert (7 Sprachen: EN, ES, FR, IT, DE, PT, CN)
 
-**Wählen Sie Ihre Sprache:** Alle KissTelegram-Systemmeldungen unterstützen 7 Sprachen durch Kompilierzeit-Auswahl.
+**Wählen Sie Ihre Sprache:** Alle Konstruktor-Nachrichten, die an Telegram gesendet werden, werden in 7 Sprachen über Sprachauswahl während der Kompilierung angezeigt (lang.h).
 
 
 ## OTA-Sicherheitsvorteile
 
-KissTelegramm OTA ist **sicherer als Espressifs Implementierung**:
+KissTelegram OTA ist **viel sicherer als Espressifs Architektur und spart Platz auf Ihrem ESP32S3**:
 
-| Feature | KissTelegram OTA | Espressif OTA |
+| Funktion | KissTelegram OTA | Espressif OTA |
 |---------|------------------|---------------|
 | Authentifizierung | PIN + PUK | Keine |
-| Checksum-Überprüfung | CRC32 automatisch | Manuell |
-| Sicherung & Rollback | Automatisch | Manuell |
-| Validierungsfenster | 60s mit `/otaok` | Keine |
+| Prüfsummen-Bestätigung | Automatisches CRC32 | Manuell |
+| Backup und Rollback | Automatisch | Manuell |
+| Validierungsfenster | 60s mit `/otaok` | Keines |
 | Boot-Loop-Erkennung | Ja | Nein |
-| Telegram-Integration | Nativ | Benötigt benutzerdefinierten Code |
+| Telegram-Integration | Nativ | Erfordert benutzerdefinierten Code |
 | Flash-Optimierung | 13MB SPIFFS | 5MB SPIFFS |
 
 ---
@@ -367,7 +384,7 @@ void enable();
 void disable();
 ```
 
-### Messaging
+### Nachrichtenversand
 
 ```cpp
 bool sendMessage(const char* chat_id, const char* text,
@@ -413,14 +430,14 @@ void clearStorage();
 
 ## Beispiele
 
-Siehe die mitgelieferten .ino in der Bibliothek, um einige Szenarien und Features sowie meinen Codestil von KissTelegram zu erkunden. Besser noch, kommentieren Sie Ihre Sprache in [lang.h] aus, um Nachrichten von den Hauptkonstruktoren (.cpp) in Ihrer Ortssprache zu erhalten. Wenn alle Sprachen kommentiert sind, erhalten Sie Nachrichten auf Spanisch, der Standardsprache:
+Sehen Sie sich die in der Bibliothek enthaltene .ino-Datei an, um einige Szenarien und Funktionen sowie meinen Codierungsstil in KissTelegram zu erkunden. Noch besser, kommentieren Sie Ihre Sprache in [lang.h] aus, um Nachrichten von den Hauptkonstruktoren (.cpp) in Ihrer Lokalsprache zu erhalten. Wenn alle Sprachen auskommentiert sind, sind die Nachrichten auf Spanisch, der Standardsprache:
 
-Code-Konventionen sind auf Englisch, aber Gedanken und Kommentare in meiner Muttersprache, verwenden Sie Ihren Online-Übersetzer, Code ist einfach, hinter dem Code steckt viel Kompliziertes ...
+Code-Konventionen sind auf Englisch, aber Gedanken und Kommentare sind auf Spanisch, meiner Muttersprache, verwenden Sie Ihren Online-Übersetzer, der Code ist einfach, im Code ist meine Vision und das Konzept von KissTelegram...
 
 ````cpp
 
 // =========================================================================
-// SPRACHAUSWAHL - EINE Sprache auskommentieren
+// LANGUAGE SELECTION - Uncomment ONE language
 // =========================================================================
 // #define LANG_CN  // 中文
 // #define LANG_DE  // Deutsch
@@ -431,9 +448,9 @@ Code-Konventionen sind auf Englisch, aber Gedanken und Kommentare in meiner Mutt
 ````
 
 ---
-## Grundlegende Konfigurationseinstellungen
+## Grundlegende Konfigurationseinrichtung
 - Benennen Sie system_setup_template.h in system_setup.h in Ihrem KissTelegram-Ordner um, um mit der Kompilierung zu beginnen.
-- Ersetzen Sie die folgenden Zeilen durch Ihre Einstellungen.
+- Ersetzen Sie die folgenden Zeilen durch Ihre Anmeldeinformationen.
 
 ````cpp
 #define KISS_FALLBACK_BOT_TOKEN "YOUR_TELEGRAM_BOT_TOKEN"
@@ -450,29 +467,31 @@ Dieses Projekt ist unter der MIT-Lizenz lizenziert - siehe die [LICENSE](LICENSE
 
 ---
 
-## Architektur, Vision, Konzept, Lösungen && Design (und der Verantwortliche für Fehlfunktionen)
+## Architektur, Vision, Konzept, Lösungen und Design (und verantwortlich für jede Fehlfunktion, das bin ich...)
 
 **Vicente Soriano**
 E-Mail: victek@gmail.com
-GitHub: [victek](https://github.com/victek)
+GitHub: [victek](https://github.com/victek/KissTelegram)
 
-**Beiträge**
-- Viele KI-Assistenten bei Übersetzungen, Code, Problemlösung und Witze.
+**Mitwirkende**
+- Viele KI-Assistenten bei Übersetzungen, Code, Fehlerbehebung und viele Stunden damit verbracht zu versuchen, sie daran zu hindern, das Rad neu zu erfinden.....
 
 ---
 
 
 ## Beitragen
 
-Beiträge sind willkommen! Bitte zögern Sie nicht, einen Pull Request einzureichen.
+Beiträge sind willkommen! Bitte zögern Sie nicht, einen Pull Request einzureichen oder mir eine E-Mail zu senden, aber ich bevorzuge einen PR, damit andere Ihre Frage finden können.
 
 ---
 
 ## Unterstützung
 
-Wenn Sie diese Bibliothek nützlich finden, können Sie gerne:
-- Dieses Repository als Favorit markieren
-- Bugs über GitHub Issues melden
-- Ihre Projekte mit KissTelegram teilen
+Wenn Sie diese Bibliothek nützlich finden, erwägen Sie bitte:
+- Diesem Repository einen Stern zu geben
+- Fehler über GitHub Issues zu melden
+- Ihre Projekte mit KissTelegram zu teilen
+- Ihren Bekannten von den Funktionen und Lösungen dieser Bibliothek zu erzählen
+- Anwendungsfälle und Erfahrungen mit KissTelegram vorzuschlagen
 
 ---

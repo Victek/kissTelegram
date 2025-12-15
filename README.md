@@ -446,6 +446,7 @@ Code conventions are in English, but thoughs and comments in my native language,
 ## Basic configuration settings
 - Rename system_setup_template.h to system_setup.h in your KissTelegram folder to start compilation.
 - Replace the following lines by your settings.
+- If you changed any of these lines and flash your ESP32 remember to aply a complete Flash erase partition, since all these credentials are keept in NVRAM.
 
 ````cpp
 #define KISS_FALLBACK_BOT_TOKEN "YOUR_TELEGRAM_BOT_TOKEN"
