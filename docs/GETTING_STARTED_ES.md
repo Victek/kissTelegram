@@ -12,7 +12,7 @@
 2. [Crear tu Bot de Telegram](#crear-tu-bot-de-telegram)
 3. [Configuración del Hardware](#configuración-del-hardware)
 4. [Configuración del Arduino IDE](#configuración-del-arduino-ide)
-5. [Primera Subida (Problemas Comunes)](#primera-subida-problemas-comunes)
+5. [Primera Subida (Crear particiones con esptool)](#primera-subida)
 6. [Archivos de Configuración](#archivos-de-configuración)
 7. [¡Éxito! ¿Qué Sigue?](#éxito-qué-sigue)
 
@@ -190,7 +190,7 @@ Dos subidas aseguran que el firmware se escriba en la **ubicación correcta** de
 
 ---
 
-### Subida #1: Flash Inicial (¡Espera Errores!)
+### Subida #1: Flash Inicial (Graba el boot loader)
 
 1. **Conecta el puerto USB-C DERECHO** (cerca del LED Power) a tu PC
 
@@ -199,38 +199,25 @@ Dos subidas aseguran que el firmware se escriba en la **ubicación correcta** de
 3. **Verifica los ajustes**:
    - ✅ Erase All Flash Before Sketch Upload: **Enabled**
    - ✅ Partition Scheme: **Custom (4MB APP/12MB LtlFS)**
+   
 
-4. **Presiona Subir** (`Ctrl+U` o botón ➡️)
+4. **Herramientas, Grabar el Bootloader** ( Presiona esta opción)
+   - ✅ Herramientas ➡️, y al final del desplegable encuentras 'Grabar el Bootloader'
+   - ✅ Pulsa aquí y grabará la nueva partición, está usando esptool
+   - Tarda 53.6 segundos y ya tienes la nueva partición para KissTelegram 
 
-5. **Espera ~2-3 minutos** (borrando + subiendo)
-
-6. **Resultado esperado**:
-   ```
-   ✅ Subida exitosa
-   ```
-
-7. **Abre el Monitor Serie** - verás errores como:
-   ```
-   ❌ E (123) boot: No factory partition found
-   ❌ E (456) esp_image: Image length 12345 doesn't fit in partition length 67890
-   ❌ E (789) boot: Failed to verify app partition
-   Guru Meditation Error: Core 0 panic'ed (LoadProhibited)
-   ```
-
-8. **Si configuraste `system_setup.h` correctamente**: Puede que recibas el **primer mensaje de Telegram** (pero el Serial mostrará errores)
-
-**¡No te asustes!** Estos errores son **esperados** y **normales**. Continúa con la Subida #2.
+Continúa con la Subida #2.
 
 ---
 
-### Subida #2: Arreglo de Particiones (Los Errores Desaparecen)
+### Subida #2: Subida del sketch
 
 1. **Desconecta el puerto USB-C DERECHO**
 
 2. **Conecta el puerto USB-C IZQUIERDO** (puerto OTG) a tu PC
 
 3. **Selecciona el nuevo puerto**: Herramientas → Puerto → Selecciona el nuevo puerto COM
-   - **Importante**: ¡El número de puerto cambiará! Busca datos en el Monitor Serie para confirmar el puerto correcto.
+   - **Importante**: ¡El número de puerto cambiará! Busca datos en el Monitor Serie para confirmar el puerto correcto, por ejemplo, pulsa el reset del ESP32s3 hasta que veas datos como respuesta
 
 4. **Verifica los ajustes de nuevo**:
    - ✅ Erase All Flash Before Sketch Upload: **Enabled**
@@ -240,7 +227,8 @@ Dos subidas aseguran que el firmware se escriba en la **ubicación correcta** de
 
 6. **Espera ~2-3 minutos** (borrando + subiendo)
 
-7. **Abre el Monitor Serie** - ahora deberías ver:
+7. **Abre el Monitor Serie** - ahora deberías ver (si has ajustado correctamente las credenciales 
+en system_setup.h (el system_setup_template que has renombrado)):
    ```
    ✅ KissTelegram v0.9.x
    ✅ WiFi conectado

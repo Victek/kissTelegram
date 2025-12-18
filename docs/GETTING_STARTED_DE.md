@@ -1,144 +1,144 @@
 # Erste Schritte mit KissTelegram auf ESP32-S3
 
-**Ein umfassender Leitfaden zum Einrichten des ESP32-S3 von Grund auf bis zur ersten Telegram-Nachricht**
+**Vollständige Anleitung zur Einrichtung Ihres ESP32-S3 von Grund auf bis zur ersten Telegram-Nachricht**
 
-> ⚠️ **KRITISCH**: Lesen Sie diesen Leitfaden vollständig durch, bevor Sie eine Firmware hochladen. Der ESP32-S3 N16R8 benötigt einen **zweistufigen Upload-Prozess** aufgrund von benutzerdefinierten Partitionen. Das Überspringen von Schritten führt zu Fehlern!
+> ⚠️ **KRITISCH**: Lesen Sie diese Anleitung vollständig, bevor Sie Firmware hochladen. Der ESP32-S3 N16R8 erfordert einen **zweistufigen Upload-Prozess** aufgrund benutzerdefinierter Partitionen. Das Überspringen von Schritten verursacht Fehler!
 
 ---
 
 ## Inhaltsverzeichnis
 
-1. [Bevor Sie beginnen](#bevor-sie-beginnen)
-2. [Erstellen Ihres Telegram-Bots](#erstellen-ihres-telegram-bots)
-3. [Hardware-Setup](#hardware-setup)
+1. [Bevor Sie Beginnen](#bevor-sie-beginnen)
+2. [Erstellen Sie Ihren Telegram-Bot](#erstellen-sie-ihren-telegram-bot)
+3. [Hardware-Konfiguration](#hardware-konfiguration)
 4. [Arduino IDE-Konfiguration](#arduino-ide-konfiguration)
-5. [Erster Upload (häufige Probleme)](#erster-upload-häufige-probleme)
+5. [Erster Upload (Partitionen mit esptool erstellen)](#erster-upload)
 6. [Konfigurationsdateien](#konfigurationsdateien)
-7. [Erfolg! Was kommt als nächstes?](#erfolg-was-kommt-als-nächstes)
+7. [Erfolg! Was Kommt Als Nächstes?](#erfolg-was-kommt-als-nächstes)
 
 ---
 
-## Bevor Sie beginnen
+## Bevor Sie Beginnen
 
-### Was Sie benötigen
+### Was Sie Benötigen
 
 - **ESP32-S3 N16R8** (16MB Flash / 8MB PSRAM)
 - **Zwei USB-C-Kabel** (zum Wechseln zwischen Bootloader- und OTG-Ports)
-- **Arduino IDE 2.x** oder neuer
-- **Windows-PC** (dieser Leitfaden konzentriert sich auf Windows, passen Sie die Pfade für Linux/Mac an)
+- **Arduino IDE 2.x** oder höher
+- **Windows-PC** (diese Anleitung ist Windows-fokussiert, passen Sie Pfade für Linux/Mac an)
 - **Telegram-Konto** auf Ihrem Telefon
 
-### Das Besondere daran
+### Was Dies Anders Macht
 
-Ihr neuer ESP32-S3 N16R8 kommt mit einem Demo-RGB-LED-Programm. KissTelegram wird **die Partitionstabelle komplett ersetzen**, um Ihren 16MB-Flash zu maximieren:
+Ihr neuer ESP32-S3 N16R8 wird mit einer integrierten RGB-LED-Demo-App geliefert. KissTelegram **ersetzt die Partitionstabelle vollständig**, um Ihre 16MB Flash zu maximieren:
 
-| Partition | Espressif-Standard | KissTelegram Benutzerdefiniert |
-|-----------|-------------------|---------------------|
-| App-Speicher | 1,5 MB | 4,5 MB (3x größer!) |
-| Dateisystem | 5 MB | 13 MB (2,6x größer!) |
-| Insgesamt verwendet | 6,5 MB | 17,5 MB |
+| Partition | Standard Espressif | KissTelegram Benutzerdefiniert |
+|-----------|-------------------|--------------------------------|
+| App-Bereich | 1.5 MB | 4.5 MB (3x größer!) |
+| Dateisystem | 5 MB | 13 MB (2.6x größer!) |
+| Gesamt Verwendet | 6.5 MB | 17.5 MB |
 
-Dies ist der Grund, warum der zweistufige Upload-Prozess erforderlich ist: **Die Partitionstabelle ändert sich zwischen Uploads**.
+Deshalb ist der zweistufige Upload-Prozess erforderlich: **die Partitionstabelle ändert sich zwischen den Uploads**.
 
 ---
 
-## Erstellen Ihres Telegram-Bots
+## Erstellen Sie Ihren Telegram-Bot
 
-### Schritt 1: Mit BotFather sprechen
+### Schritt 1: Mit BotFather Sprechen
 
 1. Öffnen Sie Telegram auf Ihrem Telefon
-2. Suchen Sie nach `@BotFather` (offizieller Bot mit blauem Verifikationshäkchen)
-3. Starten Sie ein Gespräch mit `/start`
+2. Suchen Sie nach `@BotFather` (offizieller Bot, hat blaues Häkchen)
+3. Starten Sie Gespräch mit `/start`
 4. Erstellen Sie Ihren Bot mit `/newbot`
-5. Wählen Sie einen Namen (Beispiel: "Mein Home Assistant")
-6. Wählen Sie einen Benutzernamen (muss mit `bot` enden, Beispiel: "myhome_assistant_bot")
+5. Wählen Sie einen Namen (Beispiel: "Mein Heim-Assistent")
+6. Wählen Sie einen Benutzernamen (muss mit `bot` enden, Beispiel: "meinheim_assistent_bot")
 7. **Speichern Sie Ihr Bot-Token** - sieht so aus: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
 
-### Schritt 2: Holen Sie sich Ihre Chat-ID
+### Schritt 2: Holen Sie Ihre Chat-ID
 
-**Methode 1: Einen Bot verwenden (einfachste)**
+**Methode 1: Verwenden eines Bots (Einfacher)**
 
-1. Suchen Sie nach `@userinfobot` in Telegram
-2. Starten Sie ein Gespräch mit `/start`
-3. Es antwortet mit Ihrer **Chat-ID** (eine Nummer wie `123456789`)
-4. **Speichern Sie diese Nummer** - Sie benötigen sie später in der Konfiguration
+1. Suchen Sie nach `@ChatIDHelperBot` in Telegram
+2. Starten Sie Gespräch mit `/start`
+3. Er antwortet mit Ihrer **Chat-ID** (eine Nummer wie `123456789`)
+4. **Speichern Sie diese Nummer** - Sie werden sie in der Konfiguration benötigen
 
-**Methode 2: Webbrowser verwenden**
+**Methode 2: Verwenden eines Webbrowsers**
 
 1. Senden Sie eine beliebige Nachricht an Ihren neu erstellten Bot
-2. Öffnen Sie den Browser und besuchen Sie:
+2. Öffnen Sie Browser und besuchen Sie:
    ```
-   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+   https://api.telegram.org/bot<IHR_BOT_TOKEN>/getUpdates
    ```
-   (Ersetzen Sie `<YOUR_BOT_TOKEN>` durch Ihr aktuelles Token)
+   (Ersetzen Sie `<IHR_BOT_TOKEN>` mit Ihrem tatsächlichen Token)
 3. Suchen Sie nach `"chat":{"id":123456789` in der JSON-Antwort
 4. Diese Nummer ist Ihre **Chat-ID**
 
-**✅ Jetzt haben Sie:**
+**✅ Sie haben jetzt:**
 - Bot-Token: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
 - Chat-ID: `123456789`
 
-Bewahren Sie diese sicher auf! Sie werden sie bald benötigen.
+Bewahren Sie sie sicher auf! Sie werden sie bald brauchen.
 
 ---
 
-## Hardware-Setup
+## Hardware-Konfiguration
 
-### Verständnis der zwei USB-C-Ports
+### Die Zwei USB-C-Ports Verstehen
 
 Ihr ESP32-S3 N16R8 hat **zwei USB-C-Ports**:
 
 ```
 ┌─────────────────────┐
 │  ┌─┐         ESP32  │
-│  │•│  ← Power LED    │
+│  │•│  ← Power-LED    │
 │  └─┘                 │
 │  [USB-C]  ← RECHTER PORT (Bootloader/Upload)
 │                      │
 │                      │
-│  [USB-C]  ← LINKER PORT (OTG/Normal Operation)
+│  [USB-C]  ← LINKER PORT (OTG/Normalbetrieb)
 │                      │
 └─────────────────────┘
 ```
 
-**RECHTER PORT (neben Power-LED):**
-- Wird für den **ersten Firmware-Upload** verwendet
+**RECHTER PORT (nahe der Power-LED):**
+- Wird für den **initialen Firmware-Upload** verwendet
 - Wird für den **Bootloader-Modus** verwendet
-- Verwenden Sie diesen, wenn Arduino IDE "Verbinden..." anzeigt
+- Verwenden Sie diesen, wenn Arduino IDE "Connecting..." sagt
 
 **LINKER PORT (OTG):**
 - Wird für den **Normalbetrieb** nach dem ersten Upload verwendet
-- Wird für den **zweiten Upload** (Partitionsfixierung) verwendet
+- Wird für den **zweiten Upload** (Partitionskorrektur) verwendet
 - Verwenden Sie diesen für Serial Monitor im Normalbetrieb
 
 ---
 
 ## Arduino IDE-Konfiguration
 
-### Schritt 1: Versteckte Dateien anzeigen (Windows)
+### Schritt 1: Versteckte Dateien Anzeigen (Windows)
 
-1. Öffnen Sie **Datei-Explorer**
-2. Klicken Sie auf **Ansicht** → **Anzeigen** → Aktivieren Sie:
+1. Öffnen Sie den **Datei-Explorer**
+2. Klicken Sie auf Registerkarte **Ansicht** → **Anzeigen** → Aktivieren Sie:
    - ✅ Dateinamenerweiterungen
-   - ✅ Versteckte Elemente
-3. Im **Filter**-Tab: **Alle Dateitypen**
+   - ✅ Ausgeblendete Elemente
+3. In Registerkarte **Filter**: **Alle Dateitypen**
 
-### Schritt 2: boards.txt ändern
+### Schritt 2: boards.txt Modifizieren
 
 1. Navigieren Sie zu:
    ```
-   C:\Users\<YOUR_USERNAME>\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.3.4\
+   C:\Users\<IHR_BENUTZERNAME>\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.3.4\
    ```
-   (Ersetzen Sie `3.3.4` durch Ihre ESP32-Kernversion, falls unterschiedlich)
+   (Ersetzen Sie `3.3.4` mit Ihrer ESP32-Core-Version, falls abweichend)
 
 2. Finden und öffnen Sie `boards.txt` (verwenden Sie Notepad++ oder einen beliebigen Texteditor)
 
-3. Drücken Sie `Strg+F` und suchen Sie nach:
+3. Drücken Sie `Ctrl+F` und suchen Sie nach:
    ```
    gen4esp32_4MBapp_4MBota_7MBspiffs
    ```
 
-4. **Unmittelbar unter dieser Zeile** fügen Sie diese drei Zeilen ein:
+4. **Unmittelbar unter dieser Zeile**, fügen Sie diese drei Zeilen ein:
    ```
    gen4-ESP32-S3R8n16.menu.PartitionScheme.gen4esp32scheme2=Custom (4MB APP/12MB LtlFS)
    gen4-ESP32-S3R8n16.menu.PartitionScheme.gen4esp32scheme2.build.custom_partitions=partitions
@@ -147,116 +147,104 @@ Ihr ESP32-S3 N16R8 hat **zwei USB-C-Ports**:
 
 5. **Speichern** und schließen Sie `boards.txt`
 
-6. Falls Arduino IDE offen war, **schließen und starten Sie sie neu**
+6. Falls Arduino IDE geöffnet war, **schließen und neu starten**
 
-### Schritt 3: Arduino IDE konfigurieren
+### Schritt 3: Arduino IDE Konfigurieren
 
-1. **Öffnen** Sie Ihren KissTelegram-Skizzenordner (mit `.ino`, `.h`, `.cpp` und `partitions.csv`)
+1. **Öffnen** Sie Ihren KissTelegram-Sketch-Ordner (mit `.ino`, `.h`, `.cpp`, und `partitions.csv`)
 
-2. Wechseln Sie in Arduino IDE zu **Tools** → **Board** → **4D Systems gen4-ESP32-S3R8n16**
+2. In Arduino IDE, gehen Sie zu **Werkzeuge** → **Board** → **4D Systems gen4-ESP32-S3R8n16**
 
-3. **Tools** → **Board-Daten neu laden** (Sie sehen eine Bestätigung unten auf dem Bildschirm)
+3. **Werkzeuge** → **Board-Daten Neu Laden** (Sie sehen eine Bestätigung unten)
 
-4. **Konfigurieren Sie alle Tools-Menü-Optionen:**
+4. **Konfigurieren Sie alle Werkzeug-Menü-Optionen:**
 
    | Einstellung | Wert |
-   |---------|-------|
+   |-------------|------|
    | **Board** | 4D Systems gen4-ESP32-S3R8n16 |
-   | **USB CDC On Boot** | Aktiviert |
-   | **Flash-Größe** | 16MB (128Mb) |
-   | **Partitionsschema** | **Custom (4MB APP/12MB LtlFS)** ⚠️ |
+   | **USB CDC On Boot** | Enabled |
+   | **Flash Size** | 16MB (128Mb) |
+   | **Partition Scheme** | **Custom (4MB APP/12MB LtlFS)** ⚠️ |
    | **PSRAM** | OPI PSRAM |
-   | **Upload-Geschwindigkeit** | 921600 |
-   | **Erase All Flash Before Sketch Upload** | **Aktiviert** ⚠️ |
+   | **Upload Speed** | 921600 |
+   | **Erase All Flash Before Sketch Upload** | **Enabled** ⚠️ |
 
-   ⚠️ **Kritische Einstellungen** - überprüfen Sie diese doppelt!
+   ⚠️ **Kritische Einstellungen** - doppelt überprüfen!
 
-5. **Tools** → **Serial Monitor** → Stellen Sie die Baudrate auf **115200** ein
+5. **Werkzeuge** → **Serieller Monitor** → Setzen Sie Geschwindigkeit auf **115200**
 
 ---
 
-## Erster Upload (häufige Probleme)
+## Erster Upload (Häufige Probleme)
 
-### Warum zwei Uploads erforderlich sind
+### Warum Zwei Uploads Benötigt Werden
 
 **Das Problem:**
 - Erster Upload: Arduino verwendet die **alte Partitionstabelle** zum Schreiben der Firmware
-- ESP32 startet: Findet die **neue Partitionstabelle** (aus `partitions.csv`)
-- **Nichtübereinstimmung** zwischen dem Ort, wo die Firmware geschrieben wurde, und dem Ort, an den der ESP32 sucht
+- ESP32 startet: Findet die **neue Partitionstabelle** (von `partitions.csv`)
+- **Diskrepanz** zwischen wo Firmware geschrieben wurde vs wo ESP32 danach sucht
 - Ergebnis: Boot-Fehler, Partitionsfehler, Abstürze
 
 **Die Lösung:**
-Zwei Uploads stellen sicher, dass die Firmware an die **richtige Stelle** geschrieben wird, die von der neuen Partitionstabelle definiert ist.
+Zwei Uploads stellen sicher, dass Firmware an der **korrekten Stelle** geschrieben wird, die von der neuen Partitionstabelle definiert ist.
 
 ---
 
-### Upload #1: Initiales Flash (erwarten Sie Fehler!)
+### Upload #1: Initialer Flash (Bootloader Brennen)
 
-1. **Verbinden Sie den RECHTEN USB-C-Port** (neben Power-LED) mit Ihrem PC
+1. **Verbinden Sie RECHTEN USB-C-Port** (nahe der Power-LED) mit Ihrem PC
 
-2. **Wählen Sie den Port**: Tools → Port → Wählen Sie den COM-Port, der angezeigt wird
+2. **Wählen Sie Port**: Werkzeuge → Port → Wählen Sie den erscheinenden COM-Port
 
-3. **Überprüfen Sie die Einstellungen**:
-   - ✅ Erase All Flash Before Sketch Upload: **Aktiviert**
-   - ✅ Partitionsschema: **Custom (4MB APP/12MB LtlFS)**
+3. **Überprüfen Sie Einstellungen**:
+   - ✅ Erase All Flash Before Sketch Upload: **Enabled**
+   - ✅ Partition Scheme: **Custom (4MB APP/12MB LtlFS)**
+   
 
-4. **Drücken Sie Upload** (`Strg+U` oder ➡️ Schaltfläche)
+4. **Werkzeuge, Bootloader Brennen** (Klicken Sie auf diese Option)
+   - ✅ Werkzeuge ➡️, am Ende des Dropdown-Menüs finden Sie 'Bootloader Brennen'
+   - ✅ Klicken Sie hier und es wird die neue Partition schreiben, mit esptool
+   - Dauert 53.6 Sekunden und Sie haben die neue Partition für KissTelegram 
 
-5. **Warten Sie ~2-3 Minuten** (Löschen + Hochladen)
-
-6. **Erwartetes Ergebnis**:
-   ```
-   ✅ Upload erfolgreich
-   ```
-
-7. **Öffnen Sie Serial Monitor** - Sie sehen Fehler wie:
-   ```
-   ❌ E (123) boot: No factory partition found
-   ❌ E (456) esp_image: Image length 12345 doesn't fit in partition length 67890
-   ❌ E (789) boot: Failed to verify app partition
-   Guru Meditation Error: Core 0 panic'ed (LoadProhibited)
-   ```
-
-8. **Falls Sie `system_setup.h` richtig konfiguriert haben**: Sie können die **erste Telegram-Nachricht** erhalten (aber Serial zeigt Fehler)
-
-**Keine Angst!** Diese Fehler sind **erwartet** und **normal**. Fahren Sie mit Upload #2 fort.
+Fahren Sie fort mit Upload #2.
 
 ---
 
-### Upload #2: Partitionsfixierung (Fehler verschwinden)
+### Upload #2: Sketch-Upload
 
-1. **Trennen Sie den RECHTEN USB-C-Port**
+1. **Trennen Sie RECHTEN USB-C-Port**
 
-2. **Verbinden Sie den LINKEN USB-C-Port** (OTG-Port) mit Ihrem PC
+2. **Verbinden Sie LINKEN USB-C-Port** (OTG-Port) mit Ihrem PC
 
-3. **Wählen Sie den neuen Port**: Tools → Port → Wählen Sie den neuen COM-Port
-   - **Wichtig**: Die Port-Nummer wird sich ändern! Schauen Sie im Serial Monitor nach Daten, um den richtigen Port zu bestätigen.
+3. **Wählen Sie neuen Port**: Werkzeuge → Port → Wählen Sie den neuen COM-Port
+   - **Wichtig**: Port-Nummer wird sich ändern! Suchen Sie nach Daten im Seriellen Monitor zur Bestätigung des korrekten Ports, zum Beispiel, drücken Sie Reset des ESP32s3 bis Sie Daten als Antwort sehen
 
-4. **Überprüfen Sie die Einstellungen nochmals**:
-   - ✅ Erase All Flash Before Sketch Upload: **Aktiviert**
-   - ✅ Partitionsschema: **Custom (4MB APP/12MB LtlFS)**
+4. **Überprüfen Sie Einstellungen erneut**:
+   - ✅ Erase All Flash Before Sketch Upload: **Enabled**
+   - ✅ Partition Scheme: **Custom (4MB APP/12MB LtlFS)**
 
-5. **Drücken Sie erneut Upload** (`Strg+U`)
+5. **Drücken Sie Upload erneut** (`Ctrl+U`)
 
 6. **Warten Sie ~2-3 Minuten** (Löschen + Hochladen)
 
-7. **Öffnen Sie Serial Monitor** - Sie sollten nun sehen:
+7. **Öffnen Sie Seriellen Monitor** - Sie sollten jetzt sehen (wenn Sie die Anmeldedaten korrekt gesetzt haben 
+in system_setup.h (dem umbenannten system_setup_template)):
    ```
-   ✅ KissTelegram v1.x.x
-   ✅ WiFi connected
-   ✅ Telegram bot enabled
-   ✅ System ready
+   ✅ KissTelegram v0.9.x
+   ✅ WiFi verbunden
+   ✅ Telegram-Bot aktiviert
+   ✅ System bereit
    ```
 
 8. **Überprüfen Sie Telegram** - Sie erhalten die Willkommensnachricht:
    ```
-   📦 Hello! KissTelegram is ready.
+   📦 Hallo! KissTelegram ist bereit.
    🔌 Build: 2025-12-12 10:30:45 (0xABCD1234)
-   📡 WiFi Signal: -59 dBm (Good)
-   ✅ 0 messages queued
+   📡 WiFi-Signal: -59 dBm (Gut)
+   ✅ 0 Nachrichten in Warteschlange
    ```
 
-**Erfolg!** Ihr ESP32-S3 läuft nun KissTelegram mit korrekten Partitionen.
+**Erfolg!** Ihr ESP32-S3 führt jetzt KissTelegram mit den korrekten Partitionen aus.
 
 ---
 
@@ -265,174 +253,168 @@ Zwei Uploads stellen sicher, dass die Firmware an die **richtige Stelle** geschr
 **Gute Nachrichten:** Nach den zwei initialen Uploads funktionieren alle zukünftigen Uploads normal:
 
 - Verwenden Sie **LINKEN USB-C-Port** (OTG)
-- **Nicht erforderlich**, "Erase All Flash" zu verwenden (es sei denn, Sie möchten einen sauberen Zustand)
+- **Benötigen nicht** "Erase All Flash" mehr (es sei denn, Sie haben Änderungen an NVRAM-Daten vorgenommen)
 - Laden Sie einmal hoch und es funktioniert sofort
 
 ---
 
 ## Konfigurationsdateien
 
-### system_setup.h (erforderlich vor dem ersten Upload!)
+### system_setup.h (Vor Dem Ersten Upload Erforderlich!)
 
 **Vor dem Kompilieren:**
 
 1. Navigieren Sie zu Ihrem KissTelegram-Ordner
 2. Finden Sie `system_setup_template.h`
 3. **Benennen Sie es um** in `system_setup.h`
-4. **Öffnen Sie** `system_setup.h` und füllen Sie aus:
+4. **Öffnen** Sie `system_setup.h` und füllen Sie aus:
 
 ```cpp
-// Your Telegram Bot (from BotFather)
+// Ihr Telegram-Bot (von BotFather)
 #define KISS_FALLBACK_BOT_TOKEN "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
 
-// Your Chat ID (from @userinfobot)
+// Ihre Chat-ID (von @userinfobot)
 #define KISS_FALLBACK_CHAT_ID "123456789"
 
-// Your WiFi credentials
-#define KISS_FALLBACK_WIFI_SSID "YourWiFiName"
-#define KISS_FALLBACK_WIFI_PASSWORD "YourWiFiPassword"
+// Ihre WiFi-Anmeldedaten
+#define KISS_FALLBACK_WIFI_SSID "IhrWiFiName"
+#define KISS_FALLBACK_WIFI_PASSWORD "IhrWiFiPasswort"
 
-// OTA Security (change default PIN/PUK!)
-#define KISS_FALLBACK_OTA_PIN "0000"        // 4 digits
-#define KISS_FALLBACK_OTA_PUK "00000000"    // 8 digits
+// OTA-Sicherheit (ändern Sie Standard-PIN/PUK!)
+#define KISS_FALLBACK_OTA_PIN "0000"        // 4 Ziffern
+#define KISS_FALLBACK_OTA_PUK "00000000"    // 8 Ziffern
 ```
 
-5. **Speichern Sie** die Datei
+5. **Speichern** Sie die Datei
 
-**⚠️ Sicherheitswarnung:** Ändern Sie die Standard-PIN (`0000`) und PUK (`00000000`) in Ihre eigenen Geheimnisse!
+**⚠️ Sicherheitswarnung:** Ändern Sie Standard-PIN (`0000`) und PUK (`00000000`) zu Ihren eigenen Geheimnissen!
 
 ---
 
 ### lang.h (Optional: Wählen Sie Ihre Sprache)
 
-KissTelegram unterstützt 7 Sprachen für Systemmeldungen:
+KissTelegram unterstützt 7 Sprachen für Systemnachrichten:
 
 ```cpp
-// In lang.h, uncomment ONE language:
+// In lang.h, kommentieren Sie EINE Sprache aus:
 
-// #define LANG_CN  // 中文 (Chinese)
-// #define LANG_DE  // Deutsch (German)
-// #define LANG_EN  // English
-// #define LANG_FR  // Français (French)
-// #define LANG_IT  // Italiano (Italian)
-// #define LANG_PT  // Português (Portuguese)
-// #define LANG_ES  // Español (Spanish) - DEFAULT if all commented
+// #define LANG_CN  // 中文 (Chinesisch)
+// #define LANG_DE  // Deutsch (Deutsch)
+// #define LANG_EN  // English (Englisch)
+// #define LANG_FR  // Français (Französisch)
+// #define LANG_IT  // Italiano (Italienisch)
+// #define LANG_PT  // Português (Portugiesisch)
+// #define LANG_ES  // Español (Spanisch) - STANDARD wenn alle auskommentiert
 ```
 
-Wählen Sie Ihre Sprache **vor dem Kompilieren**, um lokalisierte Meldungen zu erhalten.
+Wählen Sie Ihre Sprache **vor dem Kompilieren** für lokalisierte Nachrichten.
 
 ---
 
-## Erfolg! Was kommt als nächstes?
+## Erfolg! Was Kommt Als Nächstes?
 
-### Überprüfen Sie, ob alles funktioniert
+### Überprüfen, Dass Alles Funktioniert
 
-1. **Senden Sie `/estado` an Ihren Bot** in Telegram - Sie erhalten einen detaillierten Statusbericht:
+1. **Senden Sie `/status` an Ihren Bot** in Telegram - Sie erhalten einen detaillierten Statusbericht:
    ```
    📦 KissTelegram v1.x.x
-   🎯 SYSTEM RELIABILITY
-   ✅ System: RELIABLE
-   ✅ Messages sent: 2
-   💾 Messages pending: 0
-   📡 WiFi Signal: -59 dBm (Good)
-   🔋 Uptime: 123 seconds
-   💾 Free memory: 223 KB
+   🎯 SYSTEMZUVERLÄSSIGKEIT
+   ✅ System: ZUVERLÄSSIG
+   ✅ Gesendete Nachrichten: 2
+   💾 Ausstehende Nachrichten: 0
+   📡 WiFi-Signal: -59 dBm (Gut)
+   🔋 Betriebszeit: 123 Sekunden
+   💾 Freier Speicher: 223 KB
    ```
 
-2. **Überprüfen Sie Serial Monitor** - sollte keine Fehler anzeigen
+2. **Überprüfen Sie Seriellen Monitor** - sollte keine Fehler zeigen
 
 3. **Testen Sie Befehle**:
    - `/start` - Willkommensnachricht
    - `/help` - Verfügbare Befehle
-   - `/estado` - Systemstatus (Gesundheitsprüfung)
+   - `/status` - Systemstatus (Gesundheitsprüfung)
 
 ---
 
-### Verständnis von OTA-Updates
+### OTA-Updates Verstehen
 
-Sobald KissTelegram läuft, können Sie die Firmware **über Telegram** aktualisieren (kein USB-Kabel erforderlich!):
+Sobald KissTelegram läuft, können Sie Firmware **über Telegram** aktualisieren (kein USB-Kabel!):
 
 1. Senden Sie `/ota` an Ihren Bot
-2. Geben Sie die PIN ein: `/otapin 0000` (oder Ihre benutzerdefinierte PIN)
-3. **Senden Sie Ihre `.bin`-Firmware-Datei** (Drag & Drop in Telegram)
-4. Bot überprüft die Checksumme automatisch
+2. Geben Sie PIN ein: `/otapin 0000` (oder Ihre benutzerdefinierte PIN)
+3. **Senden Sie Ihre Firmware-Datei `.bin`** (ziehen und ablegen in Telegram)
+4. Bot überprüft Prüfsumme automatisch
 5. Bestätigen Sie: `/otaconfirm`
 6. ESP32 startet mit neuer Firmware neu
-7. **Innerhalb von 60 Sekunden** senden Sie `/otaok`, um zu bestätigen, dass es funktioniert
-8. Falls Sie nicht bestätigen, führt der ESP32 **automatisch einen Rollback** zur vorherigen Firmware durch!
+7. **Innerhalb von 60 Sekunden**, senden Sie `/otaok` zur Bestätigung, dass es funktioniert
+8. Wenn Sie nicht bestätigen, **rollt ESP32 automatisch zurück** zur vorherigen Firmware!
 
-📖 **Lesen Sie mehr:** Siehe `README_KissOTA_EN.md` (oder Ihre Sprache) für vollständige OTA-Dokumentation.
+📖 **Mehr lesen:** Siehe `README_KissOTA_DE.md` für vollständige OTA-Dokumentation.
 
 ---
 
-### Erkunden Sie den Beispiel-Code
+### Beispielcode Erkunden
 
-Das `suite_kiss.ino`-Beispiel zeigt:
+Das Beispiel `suite_kiss.ino` demonstriert:
 
 - ✅ WiFi-Verwaltung mit Qualitätsüberwachung
 - ✅ Nachrichtenwarteschlange mit Prioritäten
-- ✅ Stromverwaltungsmodi
-- ✅ Befehlsbehandlung (`/start`, `/help`, `/estado`, usw.)
+- ✅ Energieverwaltungsmodi
+- ✅ Befehlsverarbeitung (`/start`, `/help`, `/status`, etc.)
 - ✅ OTA-Updates über Telegram
-- ✅ Absturzwiederherstellung und Persistenz
-- ✅ SSL/TLS sichere Verbindungen
+- ✅ Absturz-Wiederherstellung und Persistenz
+- ✅ Sichere SSL/TLS-Verbindungen
 
-**Pro-Tipp:** Verwenden Sie den Befehl `/estado` als Ihr **Gesundheitsüberwachungs-Tool** - es ist Ihr Fenster in KissTelegrams Innere!
+**Profi-Tipp:** Verwenden Sie den `/status`-Befehl als Ihr **Gesundheitsüberwachungswerkzeug** - es ist Ihr Fenster in die KissTelegram-Interna!
 
 ---
 
-### Häufige Fehlerbehebung
+### Häufige Fehlersuche
 
 **Problem: "Port nicht gefunden" oder "Zugriff verweigert"**
-- Windows hat den Port blockiert. Trennen Sie USB, warten Sie 5 Sekunden, stecken Sie es wieder ein.
-- Versuchen Sie ein anderes USB-Kabel (einige sind nur Ladegeräte, keine Daten)
+- Windows hat den Port gesperrt. USB trennen, 5s warten, wieder verbinden.
+- Versuchen Sie ein anderes USB-Kabel (einige sind nur zum Laden, nicht für Daten)
 
 **Problem: "Timeout beim Warten auf Gerät" während des Uploads**
 - Falscher USB-Port! Denken Sie daran: RECHTER Port für ersten Upload, LINKER Port für zweiten
-- Halten Sie die BOOT-Taste am ESP32 gedrückt, während Sie Upload anklicken, lassen Sie los, nachdem "Verbindung..." angezeigt wird
+- Halten Sie BOOT-Taste am ESP32 während Sie auf Upload klicken, loslassen nachdem "Connecting..." erscheint
 
-**Problem: Serial Monitor zeigt Müllzeichen**
-- Falsche Baudrate. Stellen Sie auf **115200** in der Serial Monitor-Dropdown-Liste ein
+**Problem: Serieller Monitor zeigt Müll-Zeichen**
+- Falsche Baudrate. Setzen Sie auf **115200** im Dropdown des Seriellen Monitors
 
 **Problem: Bot antwortet nicht in Telegram**
-- Überprüfen Sie, dass `system_setup.h` das richtige Bot-Token und die Chat-ID hat
+- Überprüfen Sie, dass `system_setup.h` korrektes Bot-Token und Chat-ID hat
 - Überprüfen Sie, dass WiFi-Anmeldedaten korrekt sind
-- Öffnen Sie Serial Monitor und suchen Sie nach WiFi-Verbindungsmeldungen
+- Öffnen Sie Seriellen Monitor und suchen Sie nach WiFi-Verbindungsnachrichten
 
-**Problem: "Partition table does not fit" Kompilierungsfehler**
-- Sie haben die benutzerdefinierte Partition nicht richtig zu `boards.txt` hinzugefügt
-- Oder Sie haben nicht "Custom (4MB APP/12MB LtlFS)" in Tools → Partition Scheme ausgewählt
+**Problem: Kompilierungsfehler "Partitionstabelle passt nicht"**
+- Haben benutzerdefinierte Partition nicht korrekt zu `boards.txt` hinzugefügt
+- Oder haben "Custom (4MB APP/12MB LtlFS)" nicht in Werkzeuge → Partition Scheme gewählt
 
 ---
 
-### Erhalten Sie weitere Hilfe
+### Mehr Hilfe Erhalten
 
 - 📧 **E-Mail**: victek@gmail.com
 - 📖 **Dokumentation**: Siehe alle `README_*.md`-Dateien in Ihrem KissTelegram-Ordner
-- 🐛 **Fehlerberichte**: GitHub-Probleme (Link in der Haupt-README.md)
+- 🐛 **Fehlerberichte**: GitHub issues (Link in Haupt-README.md)
 - 💡 **Feature-Anfragen**: Auch willkommen per E-Mail oder GitHub!
 
 ---
 
-## Zusammenfassung: Der komplette Prozess
+## Zusammenfassung: Der Vollständige Prozess
 
 ```
-1. Bot-Token + Chat-ID von Telegram abrufen ✅
-2. boards.txt ändern (benutzerdefinierte Partition hinzufügen) ✅
-3. Arduino IDE konfigurieren (benutzerdefinierte Partition, Löschen aktiviert) ✅
+1. Bot-Token + Chat-ID von Telegram erhalten ✅
+2. boards.txt modifizieren (benutzerdefinierte Partition hinzufügen) ✅
+3. Arduino IDE konfigurieren (Custom-Partition, Erase aktiviert) ✅
 4. system_setup.h bearbeiten (Anmeldedaten) ✅
 5. RECHTEN USB-Port verbinden ✅
-6. Upload #1 (erwarten Sie Fehler) ✅
+6. Upload #1 (Bootloader Brennen) ✅
 7. RECHTEN trennen, LINKEN USB-Port verbinden ✅
-8. Upload #2 (Fehler weg!) ✅
+8. Upload #2 (KissTelegram-Sketch Hochladen) ✅
 9. Willkommensnachricht in Telegram empfangen ✅
-10. /estado senden, um zu überprüfen, dass alles funktioniert ✅
+10. /status senden um zu überprüfen, dass alles funktioniert ✅
 ```
 
-**Sie sind bereit, erstaunliche Projekte mit KissTelegram zu erstellen!** 🎉
-
----
-
-**Viel Erfolg beim Programmieren!**
-
-*Vicente Soriano - victek@gmail.com*
+**Sie sind bereit, erstaunliche Projekte mit KissTelegram zu bauen!** 🎉
