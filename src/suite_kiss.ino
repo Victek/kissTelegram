@@ -192,7 +192,7 @@ void testPrioridades() {
   bot->queueMessage(credentials.getChatId(), "😴 FINAL BAJO", KissTelegram::PRIORITY_LOW);
 
   // ESTADÍSTICAS FINALES POR SERIAL
-  KISS_LOG("\🔄 PRIORITY TEST:");
+  KISS_LOG("\n🔄 PRIORITY TEST:");
   KISS_LOGF(" - Initial Messages in FS: %d", initialFSSize);
   KISS_LOGF(" - Filled Messages in FS: %d", bot->getMessagesInFS());
   KISS_LOGF(" - Initial Power Mode: %d", initialPowerMode);
