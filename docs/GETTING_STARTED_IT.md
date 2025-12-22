@@ -2,17 +2,17 @@
 
 **Guida completa per configurare il tuo ESP32-S3 da zero fino al primo messaggio Telegram**
 
-> ⚠️ **CRITICO**: Leggi questa guida completamente prima di caricare qualsiasi firmware. L'ESP32-S3 N16R8 richiede un **processo di caricamento in due passaggi** a causa delle partizioni personalizzate. Saltare passaggi causerà errori!
+> ⚠️ **CRITICO**: Leggi completamente questa guida prima di caricare qualsiasi firmware. L'ESP32-S3 N16R8 richiede un **processo di caricamento in due fasi** a causa delle partizioni personalizzate. Saltare i passaggi causerà errori!
 
 ---
 
 ## Indice
 
 1. [Prima di Iniziare](#prima-di-iniziare)
-2. [Crea il Tuo Bot Telegram](#crea-il-tuo-bot-telegram)
+2. [Creare il Tuo Bot Telegram](#creare-il-tuo-bot-telegram)
 3. [Configurazione Hardware](#configurazione-hardware)
 4. [Configurazione Arduino IDE](#configurazione-arduino-ide)
-5. [Primo Caricamento (Creare partizioni con esptool)](#primo-caricamento)
+5. [Primo Caricamento (Creare partizioni con Arduino IDE)](#primo-caricamento)
 6. [File di Configurazione](#file-di-configurazione)
 7. [Successo! E Adesso?](#successo-e-adesso)
 
@@ -23,26 +23,26 @@
 ### Cosa Ti Serve
 
 - **ESP32-S3 N16R8** (16MB Flash / 8MB PSRAM)
-- **Due cavi USB-C** (per alternare tra porte bootloader e OTG)
+- **Due cavi USB-C** (per alternare tra le porte bootloader e OTG)
 - **Arduino IDE 2.x** o superiore
 - **PC Windows** (questa guida è focalizzata su Windows, adatta i percorsi per Linux/Mac)
 - **Account Telegram** sul tuo telefono
 
 ### Cosa Rende Questo Diverso
 
-Il tuo nuovo ESP32-S3 N16R8 arriva con un'app demo LED RGB integrata. KissTelegram **sostituisce completamente la tabella delle partizioni** per massimizzare i tuoi 16MB di flash:
+Il tuo nuovo ESP32-S3 N16R8 arriva con un'app demo LED RGB integrata. KissTelegram **sostituisce completamente la tabella delle partizioni** per massimizzare la tua flash da 16MB:
 
-| Partizione | Default Espressif | KissTelegram Personalizzato |
-|------------|-------------------|-----------------------------|
+| Partizione | Espressif Standard | KissTelegram Personalizzato |
+|-----------|-------------------|----------------------------|
 | Spazio App | 1.5 MB | 4.5 MB (3x più grande!) |
 | File System | 5 MB | 13 MB (2.6x più grande!) |
 | Totale Usato | 6.5 MB | 17.5 MB |
 
-Ecco perché il processo a due caricamenti è richiesto: **la tabella delle partizioni cambia tra i caricamenti**.
+Ecco perché è richiesto il processo di due caricamenti: **la tabella delle partizioni cambia tra i caricamenti**.
 
 ---
 
-## Crea il Tuo Bot Telegram
+## Creare il Tuo Bot Telegram
 
 ### Passo 1: Parla con BotFather
 
@@ -50,35 +50,35 @@ Ecco perché il processo a due caricamenti è richiesto: **la tabella delle part
 2. Cerca `@BotFather` (bot ufficiale, ha il segno di spunta blu)
 3. Inizia la conversazione con `/start`
 4. Crea il tuo bot con `/newbot`
-5. Scegli un nome (esempio: "Il Mio Assistente Casa")
-6. Scegli un nome utente (deve finire con `bot`, esempio: "ilmio_assistente_casa_bot")
-7. **Salva il tuo Bot Token** - appare così: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
+5. Scegli un nome (esempio: "Il Mio Assistente Domestico")
+6. Scegli un nome utente (deve terminare in `bot`, esempio: "ilmioassistente_domestico_bot")
+7. **Salva il tuo Token del Bot** - assomiglia a: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
 
-### Passo 2: Ottieni il Tuo Chat ID
+### Passo 2: Ottieni il Tuo ID Chat
 
 **Metodo 1: Usando un Bot (Più Facile)**
 
-1. Cerca `@ChatIDHelperBot` in Telegram
+1. Cerca `@ChatIDHelperBot` su Telegram
 2. Inizia la conversazione con `/start`
-3. Risponderà con il tuo **Chat ID** (un numero come `123456789`)
+3. Ti risponderà con il tuo **ID Chat** (un numero come `123456789`)
 4. **Salva questo numero** - ti servirà nella configurazione
 
-**Metodo 2: Usando un Browser Web**
+**Metodo 2: Usando il Browser Web**
 
 1. Invia qualsiasi messaggio al tuo bot appena creato
 2. Apri il browser e visita:
    ```
-   https://api.telegram.org/bot<IL_TUO_BOT_TOKEN>/getUpdates
+   https://api.telegram.org/bot<TUO_TOKEN_BOT>/getUpdates
    ```
-   (Sostituisci `<IL_TUO_BOT_TOKEN>` con il tuo token reale)
+   (Sostituisci `<TUO_TOKEN_BOT>` con il tuo token effettivo)
 3. Cerca `"chat":{"id":123456789` nella risposta JSON
-4. Quel numero è il tuo **Chat ID**
+4. Quel numero è il tuo **ID Chat**
 
 **✅ Ora hai:**
-- Bot Token: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
-- Chat ID: `123456789`
+- Token del Bot: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`
+- ID Chat: `123456789`
 
-Conservali al sicuro! Ti serviranno presto.
+Conservali al sicuro! Ne avrai bisogno presto.
 
 ---
 
@@ -91,43 +91,43 @@ Il tuo ESP32-S3 N16R8 ha **due porte USB-C**:
 ```
 ┌─────────────────────┐
 │  ┌─┐         ESP32  │
-│  │•│  ← LED Power    │
+│  │•│  ← LED Alimentazione
 │  └─┘                 │
 │  [USB-C]  ← PORTA DESTRA (Bootloader/Caricamento)
 │                      │
 │                      │
-│  [USB-C]  ← PORTA SINISTRA (OTG/Operazione Normale)
+│  [USB-C]  ← PORTA SINISTRA (OTG/Funzionamento Normale)
 │                      │
 └─────────────────────┘
 ```
 
-**PORTA DESTRA (vicino al LED Power):**
-- Usata per il **caricamento iniziale del firmware**
-- Usata per la **modalità bootloader**
-- Usa questa quando Arduino IDE dice "Connecting..."
+**PORTA DESTRA (vicino al LED Alimentazione):**
+- Usata per **caricamento iniziale del firmware**
+- Usata per **modalità bootloader**
+- Usa questa quando Arduino IDE dice "Connessione..."
 
 **PORTA SINISTRA (OTG):**
-- Usata per l'**operazione normale** dopo il primo caricamento
-- Usata per il **secondo caricamento** (correzione partizione)
-- Usa questa per il Monitor Seriale in operazione normale
+- Usata per **funzionamento normale** dopo il primo caricamento
+- Usata per **secondo caricamento** (correzione partizione)
+- Usa questa per il Monitor Seriale nel funzionamento normale
 
 ---
 
 ## Configurazione Arduino IDE
 
-### Passo 1: Mostra File Nascosti (Windows)
+### Passo 1: Mostrare File Nascosti (Windows)
 
 1. Apri **Esplora File**
-2. Clicca sulla scheda **Visualizza** → **Mostra** → Seleziona:
+2. Clicca sulla scheda **Visualizza** → **Mostra** → Spunta:
    - ✅ Estensioni nomi file
    - ✅ Elementi nascosti
 3. Nella scheda **Filtro**: **Tutti i tipi di file**
 
 ### Passo 2: Modificare boards.txt
 
-1. Naviga verso:
+1. Naviga a:
    ```
-   C:\Users\<IL_TUO_NOME_UTENTE>\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.3.4\
+   C:\Users\<TUO_NOME_UTENTE>\AppData\Local\Arduino15\packages\esp32\hardware\esp32\3.3.4\
    ```
    (Sostituisci `3.3.4` con la tua versione del core ESP32 se diversa)
 
@@ -147,7 +147,7 @@ Il tuo ESP32-S3 N16R8 ha **due porte USB-C**:
 
 5. **Salva** e chiudi `boards.txt`
 
-6. Se Arduino IDE era aperto, **chiudi e riavvialo**
+6. Se Arduino IDE era aperto, **chiudilo e riavvialo**
 
 ### Passo 3: Configurare Arduino IDE
 
@@ -155,23 +155,21 @@ Il tuo ESP32-S3 N16R8 ha **due porte USB-C**:
 
 2. In Arduino IDE, vai a **Strumenti** → **Scheda** → **4D Systems gen4-ESP32-S3R8n16**
 
-3. **Strumenti** → **Ricarica Dati Scheda** (vedrai conferma in basso)
-
-4. **Configura tutte le opzioni del menu Strumenti:**
+3. **Configura tutte le opzioni del menu Strumenti:**
 
    | Impostazione | Valore |
-   |--------------|--------|
+   |---------|-------|
    | **Scheda** | 4D Systems gen4-ESP32-S3R8n16 |
-   | **USB CDC On Boot** | Enabled |
-   | **Flash Size** | 16MB (128Mb) |
-   | **Partition Scheme** | **Custom (4MB APP/12MB LtlFS)** ⚠️ |
+   | **USB CDC On Boot** | Abilitato |
+   | **Dimensione Flash** | 16MB (128Mb) |
+   | **Schema Partizioni** | **Custom (4MB APP/12MB LtlFS)** ⚠️ |
    | **PSRAM** | OPI PSRAM |
-   | **Upload Speed** | 921600 |
-   | **Erase All Flash Before Sketch Upload** | **Enabled** ⚠️ |
+   | **Velocità Caricamento** | 921600 |
+   | **Cancella Tutta la Flash Prima del Caricamento Sketch** | **Abilitato** ⚠️ |
 
    ⚠️ **Impostazioni critiche** - controlla due volte!
 
-5. **Strumenti** → **Monitor Seriale** → Imposta la velocità a **115200**
+4. **Strumenti** → **Monitor Seriale** → Imposta velocità a **115200**
 
 ---
 
@@ -180,31 +178,30 @@ Il tuo ESP32-S3 N16R8 ha **due porte USB-C**:
 ### Perché Sono Necessari Due Caricamenti
 
 **Il Problema:**
-- Primo caricamento: Arduino usa la **vecchia tabella di partizioni** per scrivere il firmware
-- ESP32 si avvia: Trova la **nuova tabella di partizioni** (da `partitions.csv`)
-- **Discrepanza** tra dove il firmware è stato scritto vs dove l'ESP32 lo cerca
+- Primo caricamento: Arduino usa la **vecchia tabella delle partizioni** per scrivere il firmware
+- ESP32 si avvia: Trova la **nuova tabella delle partizioni** (da `partitions.csv`)
+- **Disallineamento** tra dove è stato scritto il firmware vs dove ESP32 lo cerca
 - Risultato: Errori di avvio, errori di partizione, crash
 
 **La Soluzione:**
-Due caricamenti assicurano che il firmware sia scritto nella **posizione corretta** definita dalla nuova tabella di partizioni.
+Due caricamenti assicurano che il firmware sia scritto nella **posizione corretta** definita dalla nuova tabella delle partizioni.
 
 ---
 
-### Caricamento #1: Flash Iniziale (Masterizza Bootloader)
+### Caricamento #1: Flash Iniziale
 
-1. **Connetti la porta USB-C DESTRA** (vicino al LED Power) al tuo PC
+1. **Collega la porta USB-C DESTRA** (vicino al LED Alimentazione) al tuo PC
 
-2. **Seleziona la porta**: Strumenti → Porta → Seleziona la porta COM che appare
+2. **Seleziona porta**: Strumenti → Porta → Seleziona la porta COM che appare
 
-3. **Verifica le impostazioni**:
-   - ✅ Erase All Flash Before Sketch Upload: **Enabled**
-   - ✅ Partition Scheme: **Custom (4MB APP/12MB LtlFS)**
+3. **Verifica impostazioni**:
+   - ✅ Cancella Tutta la Flash Prima del Caricamento Sketch: **Abilitato**
+   - ✅ Schema Partizioni: **Custom (4MB APP/12MB LtlFS)**
    
 
-4. **Strumenti, Masterizza il Bootloader** (Clicca su questa opzione)
-   - ✅ Strumenti ➡️, alla fine del menu a tendina trova 'Masterizza il Bootloader'
-   - ✅ Clicca qui e scriverà la nuova partizione, usando esptool
-   - Richiede 53.6 secondi e hai la nuova partizione per KissTelegram 
+4. **Strumenti, Carica** o (`Ctrl+U`) (Clicca sull'opzione che preferisci)
+   - ✅ Il firmware viene caricato.
+   - Richiede 53.6 secondi o molto meno se usi un'alimentazione esterna per l'ESP32s3 
 
 Continua con Caricamento #2.
 
@@ -212,20 +209,20 @@ Continua con Caricamento #2.
 
 ### Caricamento #2: Caricamento Sketch
 
-1. **Disconnetti la porta USB-C DESTRA**
+1. **Scollega la porta USB-C DESTRA**
 
-2. **Connetti la porta USB-C SINISTRA** (porta OTG) al tuo PC
+2. **Collega la porta USB-C SINISTRA** (porta OTG) al tuo PC
 
-3. **Seleziona la nuova porta**: Strumenti → Porta → Seleziona la nuova porta COM
-   - **Importante**: Il numero di porta cambierà! Cerca dati nel Monitor Seriale per confermare la porta corretta, per esempio, premi reset dell'ESP32s3 finché non vedi dati come risposta
+3. **Seleziona nuova porta**: Strumenti → Porta → Seleziona la nuova porta COM
+   - **Importante**: Il numero di porta cambierà! Cerca dati nel Monitor Seriale per confermare la porta corretta, ad esempio, premi reset ESP32s3 finché non vedi risposta di dati
 
 4. **Verifica di nuovo le impostazioni**:
-   - ✅ Erase All Flash Before Sketch Upload: **Enabled**
-   - ✅ Partition Scheme: **Custom (4MB APP/12MB LtlFS)**
+   - ✅ Cancella Tutta la Flash Prima del Caricamento Sketch: **Abilitato**
+   - ✅ Schema Partizioni: **Custom (4MB APP/12MB LtlFS)**
 
 5. **Premi di nuovo Carica** (`Ctrl+U`)
 
-6. **Aspetta ~2-3 minuti** (cancellazione + caricamento)
+6. **Attendi ~2-3 minuti** (cancellazione + caricamento, dipende se usi alimentazione esterna)
 
 7. **Apri Monitor Seriale** - ora dovresti vedere (se hai configurato correttamente le credenziali 
 in system_setup.h (il system_setup_template rinominato)):
@@ -236,7 +233,7 @@ in system_setup.h (il system_setup_template rinominato)):
    ✅ Sistema pronto
    ```
 
-8. **Controlla Telegram** - riceverai il messaggio di benvenuto:
+8. **Controlla Telegram** - riceverai messaggio di benvenuto:
    ```
    📦 Ciao! KissTelegram è pronto.
    🔌 Build: 2025-12-12 10:30:45 (0xABCD1234)
@@ -250,10 +247,10 @@ in system_setup.h (il system_setup_template rinominato)):
 
 ### Caricamenti Futuri
 
-**Buone notizie:** Dopo i due caricamenti iniziali, tutti i futuri caricamenti funzionano normalmente:
+**Buone notizie:** Dopo i due caricamenti iniziali, tutti i caricamenti futuri funzionano normalmente:
 
-- Usa la **porta USB-C SINISTRA** (OTG)
-- **Non serve** "Erase All Flash" più (a meno che tu non abbia fatto modifiche ai dati NVRAM)
+- Usa **porta USB-C SINISTRA** (OTG)
+- **Non serve** "Cancella Tutta la Flash" più (a meno che tu non abbia fatto modifiche ai dati NVRAM)
 - Carica una volta e funziona immediatamente
 
 ---
@@ -264,7 +261,7 @@ in system_setup.h (il system_setup_template rinominato)):
 
 **Prima di compilare:**
 
-1. Naviga nella tua cartella KissTelegram
+1. Naviga alla tua cartella KissTelegram
 2. Trova `system_setup_template.h`
 3. **Rinominalo** in `system_setup.h`
 4. **Apri** `system_setup.h` e compila:
@@ -273,7 +270,7 @@ in system_setup.h (il system_setup_template rinominato)):
 // Il Tuo Bot Telegram (da BotFather)
 #define KISS_FALLBACK_BOT_TOKEN "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
 
-// Il Tuo Chat ID (da @userinfobot)
+// Il Tuo ID Chat (da @userinfobot)
 #define KISS_FALLBACK_CHAT_ID "123456789"
 
 // Le Tue credenziali WiFi
@@ -287,7 +284,7 @@ in system_setup.h (il system_setup_template rinominato)):
 
 5. **Salva** il file
 
-**⚠️ Avviso di Sicurezza:** Cambia il PIN predefinito (`0000`) e il PUK (`00000000`) con i tuoi segreti!
+**⚠️ Avviso di Sicurezza:** Cambia il PIN predefinito (`0000`) e PUK (`00000000`) con i tuoi segreti personali!
 
 ---
 
@@ -304,10 +301,10 @@ KissTelegram supporta 7 lingue per i messaggi di sistema:
 // #define LANG_FR  // Français (Francese)
 // #define LANG_IT  // Italiano (Italiano)
 // #define LANG_PT  // Português (Portoghese)
-// #define LANG_ES  // Español (Spagnolo) - PREDEFINITO se tutti commentati
+// #define LANG_ES  // Español (Spagnolo) - PREDEFINITO se tutto è commentato
 ```
 
-Scegli la tua lingua **prima di compilare** per messaggi localizzati.
+Scegli la tua lingua (decommenta) **prima di compilare** per messaggi localizzati.
 
 ---
 
@@ -315,7 +312,7 @@ Scegli la tua lingua **prima di compilare** per messaggi localizzati.
 
 ### Verifica Che Tutto Funzioni
 
-1. **Invia `/status` al tuo bot** in Telegram - otterrai un rapporto di stato dettagliato:
+1. **Invia `/status` al tuo bot** su Telegram - riceverai un report di stato dettagliato:
    ```
    📦 KissTelegram v1.x.x
    🎯 AFFIDABILITÀ DEL SISTEMA
@@ -323,13 +320,13 @@ Scegli la tua lingua **prima di compilare** per messaggi localizzati.
    ✅ Messaggi inviati: 2
    💾 Messaggi in sospeso: 0
    📡 Segnale WiFi: -59 dBm (Buono)
-   🔋 Tempo di attività: 123 secondi
+   🔋 Tempo attivo: 123 secondi
    💾 Memoria libera: 223 KB
    ```
 
 2. **Controlla Monitor Seriale** - non dovrebbe mostrare errori
 
-3. **Testa i comandi**:
+3. **Testa comandi**:
    - `/start` - Messaggio di benvenuto
    - `/help` - Comandi disponibili
    - `/status` - Stato del sistema (controllo salute)
@@ -338,16 +335,16 @@ Scegli la tua lingua **prima di compilare** per messaggi localizzati.
 
 ### Comprendere gli Aggiornamenti OTA
 
-Una volta che KissTelegram è in esecuzione, puoi aggiornare il firmware **via Telegram** (senza cavo USB!):
+Una volta che KissTelegram è in esecuzione, puoi aggiornare il firmware **via Telegram** (nessun cavo USB!):
 
 1. Invia `/ota` al tuo bot
 2. Inserisci PIN: `/otapin 0000` (o il tuo PIN personalizzato)
-3. **Invia il tuo file firmware `.bin`** (trascina e rilascia in Telegram)
+3. **Invia il tuo file firmware `.bin`** (trascina e rilascia su Telegram)
 4. Il bot verifica automaticamente il checksum
 5. Conferma: `/otaconfirm`
-6. L'ESP32 si riavvia con il nuovo firmware
+6. ESP32 si riavvia con il nuovo firmware
 7. **Entro 60 secondi**, invia `/otaok` per confermare che funziona
-8. Se non confermi, l'ESP32 **torna automaticamente** al firmware precedente!
+8. Se non confermi, ESP32 **torna automaticamente** al firmware precedente!
 
 📖 **Leggi di più:** Vedi `README_KissOTA_IT.md` per la documentazione OTA completa.
 
@@ -359,37 +356,37 @@ L'esempio `suite_kiss.ino` dimostra:
 
 - ✅ Gestione WiFi con monitoraggio qualità
 - ✅ Coda messaggi con priorità
-- ✅ Modi di gestione energetica
-- ✅ Gestione comandi (`/start`, `/help`, `/status`, ecc.)
+- ✅ Modalità gestione energia
+- ✅ Gestione comandi (`/start`, `/help`, `/status`, etc.)
 - ✅ Aggiornamenti OTA via Telegram
 - ✅ Recupero crash e persistenza
-- ✅ Connessioni sicure SSL/TLS
+- ✅ Connessioni SSL/TLS sicure
 
-**Suggerimento pro:** Usa il comando `/status` come tuo **strumento di monitoraggio salute** - è la tua finestra negli interni di KissTelegram!
+**Suggerimento professionale:** Usa il comando `/status` come tuo **strumento di monitoraggio salute** - è la tua finestra sugli interni di KissTelegram!
 
 ---
 
 ### Risoluzione Problemi Comuni
 
 **Problema: "Porta non trovata" o "Accesso negato"**
-- Windows ha bloccato la porta. Disconnetti USB, aspetta 5s, riconnetti.
-- Prova un cavo USB diverso (alcuni sono solo per carica, non per dati)
+- Windows ha bloccato la porta. Scollega USB, attendi 5s, ricollega.
+- Prova cavo USB diverso (alcuni sono solo per ricarica, non dati)
 
-**Problema: "Timeout in attesa del dispositivo" durante il caricamento**
+**Problema: "Timeout in attesa del dispositivo" durante caricamento**
 - Porta USB sbagliata! Ricorda: porta DESTRA per primo caricamento, porta SINISTRA per secondo
-- Tieni premuto il pulsante BOOT sull'ESP32 mentre clicchi su Carica, rilascia dopo che appare "Connecting..."
+- Tieni premuto pulsante BOOT su ESP32 mentre clicchi su Carica, rilascia dopo apparizione di "Connessione..."
 
-**Problema: Monitor Seriale mostra caratteri spazzatura**
-- Baud rate sbagliato. Imposta a **115200** nel menu a tendina del Monitor Seriale
+**Problema: Monitor Seriale mostra caratteri casuali**
+- Velocità baud errata. Imposta a **115200** nel menu a tendina del Monitor Seriale
 
-**Problema: Il bot non risponde in Telegram**
-- Verifica che `system_setup.h` abbia il Bot Token e Chat ID corretti
+**Problema: Il bot non risponde su Telegram**
+- Verifica che `system_setup.h` abbia Token Bot e ID Chat corretti
 - Verifica che le credenziali WiFi siano corrette
 - Apri Monitor Seriale e cerca messaggi di connessione WiFi
 
-**Problema: Errore di compilazione "La tabella di partizioni non si adatta"**
+**Problema: Errore di compilazione "La tabella delle partizioni non entra"**
 - Non hai aggiunto la partizione personalizzata a `boards.txt` correttamente
-- O non hai selezionato "Custom (4MB APP/12MB LtlFS)" in Strumenti → Partition Scheme
+- Oppure non hai selezionato "Custom (4MB APP/12MB LtlFS)" in Strumenti → Schema Partizioni
 
 ---
 
@@ -397,7 +394,7 @@ L'esempio `suite_kiss.ino` dimostra:
 
 - 📧 **Email**: victek@gmail.com
 - 📖 **Documentazione**: Vedi tutti i file `README_*.md` nella tua cartella KissTelegram
-- 🐛 **Segnalazione Bug**: GitHub issues (link nel README.md principale)
+- 🐛 **Segnalazioni Bug**: Issue su GitHub (link nel README.md principale)
 - 💡 **Richieste Funzionalità**: Anche benvenute via email o GitHub!
 
 ---
@@ -405,16 +402,16 @@ L'esempio `suite_kiss.ino` dimostra:
 ## Riepilogo: Il Processo Completo
 
 ```
-1. Ottenere Bot Token + Chat ID da Telegram ✅
+1. Ottenere Token Bot + ID Chat da Telegram ✅
 2. Modificare boards.txt (aggiungere partizione personalizzata) ✅
-3. Configurare Arduino IDE (Partizione Custom, Erase abilitato) ✅
+3. Configurare Arduino IDE (Partizione personalizzata, Cancellazione abilitata) ✅
 4. Modificare system_setup.h (credenziali) ✅
-5. Connettere porta USB DESTRA ✅
-6. Caricamento #1 (Masterizza Bootloader) ✅
-7. Disconnettere DESTRA, connettere porta USB SINISTRA ✅
-8. Caricamento #2 (Carica Sketch KissTelegram) ✅
-9. Ricevere messaggio di benvenuto in Telegram ✅
+5. Collegare porta USB DESTRA ✅
+6. Caricamento #1 (nuove partizioni)✅
+7. Scollegare DESTRA, collegare porta USB SINISTRA ✅
+8. Caricamento #2 (Caricare Sketch KissTelegram) ✅
+9. Ricevere messaggio di benvenuto su Telegram ✅
 10. Inviare /status per verificare che tutto funzioni ✅
 ```
 
-**Sei pronto a costruire progetti incredibili con KissTelegram!** 🎉
+**Sei pronto per costruire progetti incredibili con KissTelegram!** 🎉

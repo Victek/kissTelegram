@@ -12,7 +12,7 @@
 2. [Create Your Telegram Bot](#create-your-telegram-bot)
 3. [Hardware Configuration](#hardware-configuration)
 4. [Arduino IDE Configuration](#arduino-ide-configuration)
-5. [First Upload (Create partitions with esptool)](#first-upload)
+5. [First Upload (Create partitions with arduino IDE)](#first-upload)
 6. [Configuration Files](#configuration-files)
 7. [Success! What's Next?](#success-whats-next)
 
@@ -155,9 +155,7 @@ Your ESP32-S3 N16R8 has **two USB-C ports**:
 
 2. In Arduino IDE, go to **Tools** → **Board** → **4D Systems gen4-ESP32-S3R8n16**
 
-3. **Tools** → **Reload Board Data** (you'll see confirmation at bottom)
-
-4. **Configure all Tools menu options:**
+3. **Configure all Tools menu options:**
 
    | Setting | Value |
    |---------|-------|
@@ -171,7 +169,7 @@ Your ESP32-S3 N16R8 has **two USB-C ports**:
 
    ⚠️ **Critical settings** - double-check!
 
-5. **Tools** → **Serial Monitor** → Set speed to **115200**
+4. **Tools** → **Serial Monitor** → Set speed to **115200**
 
 ---
 
@@ -190,7 +188,7 @@ Two uploads ensure firmware is written to the **correct location** defined by th
 
 ---
 
-### Upload #1: Initial Flash (Burn Bootloader)
+### Upload #1: Initial Flash
 
 1. **Connect RIGHT USB-C port** (near Power LED) to your PC
 
@@ -201,10 +199,9 @@ Two uploads ensure firmware is written to the **correct location** defined by th
    - ✅ Partition Scheme: **Custom (4MB APP/12MB LtlFS)**
    
 
-4. **Tools, Burn Bootloader** (Click this option)
-   - ✅ Tools ➡️, at the end of dropdown find 'Burn Bootloader'
-   - ✅ Click here and it will write the new partition, using esptool
-   - Takes 53.6 seconds and you have the new partition for KissTelegram 
+4. **Tools, Load** or (`Ctrl+U`) (Click the option as you like)
+   - ✅ The firmware is uploaded.
+   - Takes 53.6 seconds or much less if you use an external power supply to the ESP32s3 
 
 Continue with Upload #2.
 
@@ -225,7 +222,7 @@ Continue with Upload #2.
 
 5. **Press Upload again** (`Ctrl+U`)
 
-6. **Wait ~2-3 minutes** (erasing + uploading)
+6. **Wait ~2-3 minutes** (erasing + uploading, depends if you use an external power supply)
 
 7. **Open Serial Monitor** - you should now see (if you've correctly set credentials 
 in system_setup.h (the renamed system_setup_template)):
@@ -307,7 +304,7 @@ KissTelegram supports 7 languages for system messages:
 // #define LANG_ES  // Español (Spanish) - DEFAULT if all commented
 ```
 
-Choose your language **before compiling** for localized messages.
+Choose your language (uncomment) **before compiling** for localized messages.
 
 ---
 
@@ -410,7 +407,7 @@ The `suite_kiss.ino` example demonstrates:
 3. Configure Arduino IDE (Custom partition, Erase enabled) ✅
 4. Edit system_setup.h (credentials) ✅
 5. Connect RIGHT USB port ✅
-6. Upload #1 (Burn Bootloader) ✅
+6. Upload #1 (new partitions)✅
 7. Disconnect RIGHT, connect LEFT USB port ✅
 8. Upload #2 (Upload KissTelegram Sketch) ✅
 9. Receive welcome message in Telegram ✅
