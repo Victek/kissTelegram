@@ -4,9 +4,13 @@
 #ifndef KISS_TELEGRAM_H
 #define KISS_TELEGRAM_H
 
-#include "system_setup.h"
+#include "kiss_setup.h"
 #include "KissTime.h"
+#include "KissClient.h"
 #include "KissSSL.h"
+#if KISS_LTE_ENABLED
+#include "KissLTE.h"
+#endif
 #include <WiFi.h>
 
 
@@ -226,11 +230,19 @@ public:
   bool hasTimePassed(unsigned long startTime, unsigned long interval);
   bool pingTelegram();
   unsigned long lastPingTime = 0;
-  void updateSSLMode();  // ← AÑADIR
+  void updateSSLMode();
+
+  // ========== OPTIMIZACIÓN LTE ==========
+  bool isUsingLTE();
+  bool shouldUseKeepAlive();
+  bool shouldCloseAfterRequest();
+  int getRecommendedPingInterval();
+  void optimizeConnectionForNetwork();
 
 private:
   // ========== VARIABLES CONEXIÓN ==========
-  KissSSL* sslClient;
+  KissClient* networkClient;  // Polimórfico: puede ser KissSSL o KissLTE
+  bool usingLTE;  // Flag para saber qué cliente está activo
   char botToken[64];
   bool enabled;
   unsigned long wifiStableTime;
@@ -370,11 +382,16 @@ private:
   // ========== MÉTODOS STORAGE ==========
   bool shouldSave();
 
+  // ========== MÉTODOS NETWORK CLIENT ==========
+  bool initializeNetworkClient();  // Inicializar WiFi o LTE según config
+  bool tryFallbackToLTE();  // Intentar failover a LTE si WiFi falla
+  bool isLTEAvailable();  // Verificar si LTE está configurado
+
   // HELPER
   void printNumber(long value) {
     char buffer[20];
     snprintf(buffer, sizeof(buffer), "%ld", value);
-    sslClient->print(buffer);
+    networkClient->print(buffer);
   }
 };
 

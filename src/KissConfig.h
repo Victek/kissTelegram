@@ -5,7 +5,7 @@
 #ifndef KISS_CONFIG_H
 #define KISS_CONFIG_H
 
-#include "system_setup.h"
+#include "kiss_setup.h"
 #include <Preferences.h>
 
 class KissConfig {

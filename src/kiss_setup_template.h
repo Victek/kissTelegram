@@ -1,16 +1,15 @@
-// system_setup.h
+// kiss_setup.h
 // Vicente Soriano - victek@gmail.com
 // Manager de configuración KissTelegram Suite
 
-#ifndef SYSTEM_SETUP_H
-#define SYSTEM_SETUP_H
+#ifndef KISS_SETUP_H
+#define KISS_SETUP_H
 
 #include <Arduino.h>
 #include <LittleFS.h>
 
-// ========== MODO DESARROLLO/PRODUCCIÓN ==========
-// ========== TRUE DESARROLLO/FALSE PRODUCCIÓN
-// Así paras el loro por el serial ..pero la verdad es que no molesta demasiado
+// Pasar a false si quieres parar el loro del serial una vez lo pases a produción
+// ========== TRUE DESARROLLO==DEVELOP./FALSE=PRODUCTION==PRODUCCIÓN
 #define KISS_DEVELOPMENT_MODE true
 
 // ========== MACROS DE LOGGING UNIFICADAS ==========
@@ -45,7 +44,7 @@
 #define KISS_FS_MAX_FILES 10
 #define KISS_FS_QUEUE_FILE "/queue_messages.log"
 
-/* Para Platformio/For Platformio to compile with ESP_IDF version
+/* Para compilar en Platformio para compatibilidad con el ESP_IDF
 inline void KISS_INIT_WDT() {
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
   // ESP-IDF 5.x
@@ -94,15 +93,39 @@ inline bool KISS_CHECK_FS_HEALTH() {
   return true;
 }
 
-// Esto lo debes rellenar si quieres que Telegram te diga algo!!
-// Es conveniente que cambies los fallback del PIN y el PUK ahora ... y lo recuerdes al probar el OTA, podrás? No bebas alcohol .. y deja el móvil un rato. 
 // ========== CREDENCIALES FALLBACK ==========
-#define KISS_FALLBACK_BOT_TOKEN "YOUR_TELEGRAM_BOT_TOKEN"
-#define KISS_FALLBACK_CHAT_ID "YOUR_CHAT_ID number"
-#define KISS_FALLBACK_WIFI_SSID "YOUR_WIFI_SSID"
-#define KISS_FALLBACK_WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
+#define KISS_FALLBACK_BOT_TOKEN "YOUR_BOT_TOKEN"
+#define KISS_FALLBACK_CHAT_ID "YOUR_CHAT_ID"
+#define KISS_FALLBACK_WIFI_SSID "YOUR_SSID"
+#define KISS_FALLBACK_WIFI_PASSWORD "YOUR_SSID_PASSWRD"
 #define KISS_FALLBACK_OTA_PIN "0000"
 #define KISS_FALLBACK_OTA_PUK "00000000"
+
+
+// ========== CONFIGURACIÓN LTE ================
+#define KISS_LTE_APN ""  // Cambiar según operador
+#define KISS_LTE_USER ""
+#define KISS_LTE_PASS ""
+#define KISS_LTE_PIN ""  // PIN de SIM (cambiar o dejar vacío)
+#define KISS_LTE_MCCMNC "" // Para ir más rápido en el COPS del LTE
+
+/*
+#define KISS_LTE_APN ""  // otra Fallback SIM
+#define KISS_LTE_USER ""
+#define KISS_LTE_PASS ""
+#define KISS_LTE_PIN ""  // PIN de SIM (cambiar o dejar vacío)
+#define KISS_LTE_MCCMNC "" // Para ir más rápido en el COPS del LTE
+*/
+
+// ========== CONFIGURACION VERSION KISSTELEGRAM ==========
+// ⚠️ PARA CAMBIAR LA VERSIÓN: Edita solo esta línea ⬇️
+#define KISS_SUITE_VERSION "1.0.0"
+// ⚠️ Fin de configuración de versión ⬆️
+
+// Helper para obtener versión
+inline const char* KISS_GET_VERSION() {
+  return KISS_SUITE_VERSION;
+}
 
 // ========== STORAGE NVS KEYS ==========
 #define KISS_NVS_NAMESPACE "kiss_suite"
@@ -113,6 +136,11 @@ inline bool KISS_CHECK_FS_HEALTH() {
 #define KISS_NVS_OTA_PIN_KEY "ota_pin"
 #define KISS_NVS_OTA_PUK_KEY "ota_puk"
 #define KISS_NVS_OTA_LOCKED_KEY "ota_locked"
+#define KISS_NVS_SIM_PIN_KEY "sim_pin"
+#define KISS_NVS_LTE_APN_KEY "lte_apn"
+#define KISS_NVS_LTE_USER_KEY "lte_user"
+#define KISS_NVS_LTE_PASS_KEY "lte_pass"
+
 
 // ========== LÍMITES DE TAMAÑO CREDENCIALES ==========
 #define KISS_MAX_TOKEN_LENGTH 64
@@ -168,7 +196,7 @@ inline bool KISS_CHECK_HEAP() {
   return true;
 }
 
-// ========== CONFIGURACIÓN OTA - Un poco más realista ==========
+// ========== CONFIGURACIÓN OTA - Un poco más sensato ==========
 #define KISS_OTA_SIZE_MARGIN (65536)     // 64KB margen partición
 #define KISS_OTA_PSRAM_MARGIN (1048576)  // 1MB margen PSRAM
 #define KISS_OTA_PIN_ATTEMPTS 3
@@ -268,48 +296,53 @@ inline bool KISS_CHECK_HEAP() {
   "2oqwJ6vkuLKSJpKC0xqHWDyDDELGHNLHdR2v6Y2LY0LKWRrQLhFyAqd8tKnB\n" \
   "-----END CERTIFICATE-----\n"
 
+// ========== CONFIGURACIÓN LTE ==========
+#define KISS_LTE_ENABLED true
+#define KISS_LTE_RX_PIN 18
+#define KISS_LTE_TX_PIN 17
+#define KISS_LTE_PWRKEY_PIN 16 //PWRKEY LTE
+#define KISS_LTE_DTR_PIN 15  // DTR LTE
+
+// Timeout WiFi antes de fallback a LTE (milisegundos)
+#define KISS_WIFI_TIMEOUT_MS 30000
+
 // ========== DETECCIÓN AUTOMÁTICA PLUGINS ==========
 #define KISS_HAS_OTA true
-
-// ========== VERSIÓN UNIFICADA ==========
-// ⚠️ PARA CAMBIAR LA VERSIÓN: Edita solo esta línea ⬇️
-#define KISS_SUITE_VERSION "0.9.0"
-// ⚠️ Fin de configuración de versión ⬆️
-
-// Helper para obtener versión
-inline const char* KISS_GET_VERSION() {
-  return KISS_SUITE_VERSION;
-}
+#define KISS_HAS_LTE true
 
 // ========== INFORMACIÓN DEL SISTEMA ==========
 inline void KISS_PRINT_SYSTEM_INFO() {
-  KISS_LOGF("📦 KissTelegram Suite: v%s\n", KISS_GET_VERSION());
-  KISS_LOGF("💾 Filesystem: %s\n", KISS_FS_NAME);
+  KISS_LOGF("📦 KissTelegram Suite: v%s", KISS_GET_VERSION());
+  KISS_LOGF("💾 Filesystem: %s", KISS_FS_NAME);
 
 #if KISS_HAS_OTA
-  KISS_LOGF("🔧 KissOTA: [ACTIVO]\n");
+  KISS_LOGF("🔧 KissOTA: [ACTIVO]");
 #else
   KISS_LOG("🔧 KissOTA: [NO INCLUIDO]");
 #endif
 
-  KISS_LOGF("⏰ KissTime: [NTP]\n");
-  KISS_LOGF("🔨 Modo: %s\n", KISS_DEVELOPMENT_MODE ? "DESARROLLO" : "PRODUCCIÓN");
-  KISS_LOGF("💾 Heap libre: %d bytes\n", ESP.getFreeHeap());
+#if KISS_HAS_LTE
+  KISS_LOGF("📡 KissLTE: [ACTIVO]");
+#else
+  KISS_LOG("📡 KissLTE: [NO INCLUIDO]");
+#endif
+
+  KISS_LOGF("⏰ KissTime: [NTP]");
+  KISS_LOGF("🔨 Modo: %s", KISS_DEVELOPMENT_MODE ? "DESARROLLO" : "PRODUCCIÓN");
+  KISS_LOGF("💾 Heap libre: %d bytes", ESP.getFreeHeap());
 
   if (KISS_FS.totalBytes() > 0) {
     float usage = KISS_GET_FS_USAGE();
-    KISS_LOGF("💿 %s: %.1f%% usado\n\n", KISS_FS_NAME, usage);
+    KISS_LOGF("💿 %s: %.1f%% usado", KISS_FS_NAME, usage);
   }
 }
 
-// Esto es para detectar el bug conocido del IDE de arduino y Platformio cuando no actualiza la versión que estás compilando..
-// Una hora viendo el mismo error, soy idiota ...  Son todos iguales...
 // ========== VERIFICADOR AUTOMÁTICO DE BUILD ==========
 #define BUILD_TIMESTAMP __DATE__ " " __TIME__
 #define BUILD_DATE __DATE__
 #define BUILD_TIME __TIME__
 
-// Hash automático basado en timestamp de compilación al menos
+// Hash automático basado en timestamp de compilación
 inline uint32_t getBuildHash() {
   const char* ts = BUILD_TIMESTAMP;
   uint32_t hash = 5381;
@@ -335,4 +368,4 @@ inline void KISS_PRINT_BUILD_INFO() {
   Serial.println("=====================================================\n");
 }
 
-#endif  // SYSTEM_SETUP_H
+#endif  // KISS_SETUP_H

@@ -122,8 +122,7 @@
 #define LANG_INFO_MSG_DEL "🗑️ Batch delete: %d messaggi eliminati"
 #define LANG_INFO_FLUSH "🗑️ Flush finale - coda vuota"
 #define LANG_INFO_MSG_QUEUE "📤 Elaborati %d messaggi dalla coda"
-#define LANG_INFO_POWER_MODE "
-🔋 ENERGIA:"
+#define LANG_INFO_POWER_MODE "🔋 ENERGIA:"
 #define LANG_INFO_TUR_ACT "🚀 TURBO MODE ATTIVATO"
 #define LANG_INFO_TUR_DEAC "🐢 TURBO MODE DISATTIVATO - %d msgs in %lu ms (%.1f msg/s)"
 #define LANG_INFO_DIAG_1 "\n📊 DIAGNOSTICO KISSTELEGRAM:" KISS_SUITE_VERSION

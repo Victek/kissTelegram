@@ -2,37 +2,57 @@
 #define KISS_SSL_H
 
 #include <Arduino.h>
-#include <WiFiClientSecure.h> //Wrapper template de defines
+#include <WiFiClientSecure.h>
+#include <WiFi.h>
+#include "KissClient.h"
 
-class KissSSL {
+class KissSSL : public KissClient {
 public:
   KissSSL();
   ~KissSSL();
 
-  bool connectToTelegram();
-  bool connect(const char* host, uint16_t port);
-  bool connected();
-  bool isConnected();
-  void disconnect();
+  // ========== MÉTODOS VIRTUALES KissClient ==========
+  bool connectToTelegram() override;
+  bool connect(const char* host, uint16_t port) override;
+  bool connected() override;
+  bool isConnected() override;
+  void disconnect() override;
 
-  void setCACert(const char* rootCA);
-  void setInsecure();
-  bool verify(const char* fingerprint, const char* url);
-  void setSecureMode(bool secure);
-  bool isSecureMode();
+  void setCACert(const char* rootCA) override;
+  void setInsecure() override;
+  bool verify(const char* fingerprint, const char* url) override;
+  void setSecureMode(bool secure) override;
+  bool isSecureMode() override;
+
+  size_t print(const char* str) override;
+  size_t print(const String& str) override;
+  size_t println(const char* str) override;
+  size_t println(const String& str) override;
+
+  int available() override;
+  int read() override;
+  int read(uint8_t* buffer, size_t size) override;
+  void stop() override;
+  void printInfo() override;
+
+  // ========== POWER MANAGEMENT ==========
+  bool setPowerMode(KissClientPowerMode mode) override;
+  KissClientPowerMode getPowerMode() override;
+  int getCurrentConsumption() override;
+
+  // ========== INFORMACIÓN ==========
+  const char* getClientType() override;
+  int getSignalStrength() override;
+  const char* getConnectionInfo() override;
+
+  // ========== DIAGNÓSTICOS ==========
+  bool isConnectionHealthy() override;
+  unsigned long getConnectionAge() override;
+  int getErrorCount() override;
+  void resetErrorCount() override;
+
+  // ========== MÉTODOS LEGACY (mantener compatibilidad) ==========
   void toggleSecureMode();
-
-
-  size_t print(const char* str);
-  size_t print(const String& str);
-  size_t println(const char* str);
-  size_t println(const String& str);
-
-  int available();
-  int read();
-  int read(uint8_t* buffer, size_t size);
-  void stop();
-  void printInfo();
 
 private:
   WiFiClientSecure* client;

@@ -6,7 +6,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
-#include "system_setup.h"
+#include "kiss_setup.h"
 
 class KissCredentials {
 public:
