@@ -1,5 +1,6 @@
 # Archivos de configuración con credenciales
 system_setup.h
+kiss_setup.h
 
 # Claude Code
 .claude/
