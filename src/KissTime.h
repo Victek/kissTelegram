@@ -5,7 +5,7 @@
 #ifndef KISS_TIME_H
 #define KISS_TIME_H
 
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 #include <Preferences.h>
 
 class KissTime {

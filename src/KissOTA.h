@@ -5,7 +5,7 @@
 #ifndef KISS_OTA_H
 #define KISS_OTA_H
 
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 #include "KissTelegram.h"
 #include "KissCredentials.h"
 #include <Preferences.h>

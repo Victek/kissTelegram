@@ -6,7 +6,7 @@
 #define KISS_CLIENT_H
 
 #include <Arduino.h>
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 
 // ========== POWER MODES ==========
 // Sincronizado con KissTelegram::PowerMode

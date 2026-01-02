@@ -1,6 +1,7 @@
 //suite_kiss.ino
 // Vicente Soriano - victek@gmail.com
 // Some demos for KissTelegram
+// Build: 2025-12-21
 
 // ==========================================================================
 // LANGUAGE SELECTION FOR TELEGRAM messages, see lang.h
@@ -22,6 +23,10 @@
 #include "KissOTA.h"
 #endif
 
+#ifdef KISS_HAS_LTE
+#include "KissLTE.h"
+#endif
+
 // ========== INSTANCIAS GLOBALES ==========
 KissTelegram* bot = nullptr;
 KissCredentials credentials;
@@ -30,6 +35,19 @@ KissConfig& config = KissConfig::getInstance();
 #ifdef KISS_HAS_OTA
 KissOTA* ota = nullptr;
 #endif
+
+#ifdef KISS_HAS_LTE
+KissLTE& lte = KissLTE::getInstance();
+#endif
+
+// ========== ESTADO CONEXIÓN ==========
+enum ConnectionMode {
+  CONN_NONE,
+  CONN_WIFI,
+  CONN_LTE
+};
+
+ConnectionMode currentConnection = CONN_NONE;
 
 // ========== ESTADÍSTICAS ==========
 struct SystemStats {
@@ -41,6 +59,7 @@ struct SystemStats {
   int wifiDropouts;
   int queueFullCount;
   int fallbackEvents;
+  int lteActivations;
 };
 
 SystemStats stats;
@@ -84,24 +103,79 @@ void setup() {
   // Cargar credenciales
   credentials.begin();
 
-  // WiFi inteligente (sale cuando conecta)
-  Serial.printf("📡Conectando WiFi: %s\n", credentials.getWifiSSID());
+#ifdef KISS_HAS_LTE
+  // Inicializar LTE (en standby)
+  Serial.println("📡 Preparando módulo LTE...");
+  #ifdef KISS_LTE_DTR_PIN
+    // Inicializar con DTR para sleep mode confiable
+    lte.begin(&Serial1, KISS_LTE_RX_PIN, KISS_LTE_TX_PIN,
+              KISS_LTE_PWRKEY_PIN, KISS_LTE_DTR_PIN);
+    Serial.printf("✅ DTR habilitado en GPIO%d para sleep mode\n", KISS_LTE_DTR_PIN);
+  #else
+    // Inicializar sin DTR (sleep mode deshabilitado)
+    lte.begin(&Serial1, KISS_LTE_RX_PIN, KISS_LTE_TX_PIN, KISS_LTE_PWRKEY_PIN);
+    Serial.println("⚠️ Sin DTR - sleep mode deshabilitado");
+  #endif
+
+  lte.setAPN(KISS_LTE_APN, KISS_LTE_USER, KISS_LTE_PASS);
+  if (strlen(KISS_LTE_PIN) > 0) {
+    lte.setPIN(KISS_LTE_PIN);
+  }
+  Serial.println("✅ LTE preparado (standby)\n");
+#endif
+
+  // Intentar WiFi primero
+  Serial.printf("📡 Conectando WiFi: %s\n", credentials.getWifiSSID());
   WiFi.begin(credentials.getWifiSSID(), credentials.getWifiPassword());
 
   Serial.print("⏳");
   unsigned long wifiStart = millis();
+  bool wifiConnected = false;
+
   while (WiFi.status() != WL_CONNECTED) {
-    if (millis() - wifiStart > 30000) {
-      Serial.println("\n❌ Timeout del WiFi");
-      return;
+    if (millis() - wifiStart > KISS_WIFI_TIMEOUT_MS) {
+      Serial.println("\n⚠️ Timeout WiFi");
+      wifiConnected = false;
+      break;
     }
     SAFE_DELAY(500);
     Serial.print(".");
   }
 
-  unsigned long wifiTime = millis() - wifiStart;
-  Serial.printf("\n✅ WiFi en %lu ms - IP: %s\n",
-                wifiTime, WiFi.localIP().toString().c_str());
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiConnected = true;
+    unsigned long wifiTime = millis() - wifiStart;
+    Serial.printf("\n✅ WiFi conectado en %lu ms - IP: %s\n",
+                  wifiTime, WiFi.localIP().toString().c_str());
+    currentConnection = CONN_WIFI;
+  }
+
+#ifdef KISS_HAS_LTE
+  // Fallback a LTE si WiFi falló
+  if (!wifiConnected) {
+    Serial.println("📡 Activando fallback LTE...");
+
+    if (lte.powerOn() && lte.connect()) {
+      Serial.println("✅ LTE conectado");
+      lte.printModuleInfo();
+      currentConnection = CONN_LTE;
+      stats.lteActivations++;
+
+      // IMPORTANTE: Indicar al bot que use LTE
+      Serial.println("🔧 Configurando bot para usar LTE...");
+      // El bot automáticamente detectará LTE en initializeNetworkClient()
+    } else {
+      Serial.println("❌ Error: sin conexión disponible");
+      currentConnection = CONN_NONE;
+      return;
+    }
+  }
+#else
+  if (!wifiConnected) {
+    Serial.println("❌ Sin conexión WiFi - sistema detenido");
+    return;
+  }
+#endif
 
   // INICIALIZAR KISSTIME PRIMERO (necesario para SSL en OTA)
   Serial.println("⏰ Sincronizando reloj NTP...");
@@ -113,7 +187,9 @@ void setup() {
     Serial.println("⚠️ Reloj no sincronizado - modo INSECURE");
   }
 
-  // Crear y configurar bot
+  // CREAR BOT DESPUÉS de establecer conexión (WiFi o LTE)
+  // Esto permite que initializeNetworkClient() detecte correctamente la red activa
+  Serial.println("🤖 Inicializando KissTelegram...");
   bot = new KissTelegram(credentials.getBotToken());
 
   // RESTAURAR MENSAJES PENDIENTES DE LITTLEFS
@@ -165,7 +241,7 @@ void testPrioridades() {
   int initialFSSize = bot->getMessagesInFS();
   KissTelegram::PowerMode initialPowerMode = bot->getCurrentPowerMode();
 
-  // TEST 1: Mensajes LOW (no deberá activar power management) PRIORITY_LOW
+  // Mensajes LOW (no deberá activar power management) PRIORITY_LOW
   KISS_LOG("\n😴 TEST 1: Mensajes LOW (modo normal)");
   for (int i = 1; i <= 5; i++) {
     char msg[50];
@@ -174,7 +250,7 @@ void testPrioridades() {
     delay(500);
   }
 
-  // TEST 2: Mensajes CRITICOS (deberán activar TURBO inmediatamente) PRIORITY_CRITICAL
+  // Mensajes CRITICOS (deberán activar TURBO inmediatamente) PRIORITY_CRITICAL
   KISS_LOG("\n🚨 TEST 2: Mensajes CRITICAL (activar TURBO)");
   for (int i = 1; i <= 4; i++) {
     char msg[60];
@@ -183,7 +259,7 @@ void testPrioridades() {
     delay(300);
   }
 
-  // TEST 3: Mezcla de prioridades
+  // Mezcla de prioridades
   KISS_LOG("\n🔄 TEST 3: Mezcla de prioridades");
   bot->queueMessage(credentials.getChatId(), "📊 NORMAL mezclado", KissTelegram::PRIORITY_NORMAL);
   delay(200);
@@ -252,9 +328,15 @@ void handleMessage(const char* chat_id, const char* text,
                    const char* command, const char* param) {
   Serial.printf("📨 Comando recibido: %s %s\n", command, param);
 
+  // ✅ Comandos OTA críticos bypassean debounce anti-spam
+  // Esto permite que /otaok funcione inmediatamente tras boot del nuevo firmware
+  bool isOTACritical = (strcmp(command, "/otaok") == 0 ||
+                        strcmp(command, "/otacancel") == 0);
+
   static unsigned long lastHandle = 0;
-  if (millis() - lastHandle < 2000) {
+  if (!isOTACritical && millis() - lastHandle < 2000) {
     Serial.println("⏰ Demasiado rápido - ignorado");
+    bot->sendMessage(chat_id, "⚠️ Comando muy rápido\nVuelve a enviar");
     return;
   }
   lastHandle = millis();
@@ -267,6 +349,7 @@ void handleMessage(const char* chat_id, const char* text,
              "/config - Config a monitor serie\n"
              "/estado - Estado sistema + LittleFS\n"
              "/stats - Estadísticas acumuladas\n"
+             "/lte - Stats LTE (solo en LTE)\n"
              "/debug - Info detallada\n"
              "/debugfs - Debug del FS\n"
              "/memoria - Info memoria\n"
@@ -312,17 +395,45 @@ void handleMessage(const char* chat_id, const char* text,
     const char* reliabilityEmoji = systemReliable ? "✅" : "⚠️";
     const char* reliabilityText = systemReliable ? _(STATUS_RELIABLE) : _(STATUS_CHECK);
 
-    // Obtener RSSI (señal WiFi)
-    int32_t rssi = WiFi.RSSI();
+    // Obtener modo de conexión y RSSI
+    const char* connectionMode;
+    int32_t rssi;
     const char* signalQuality;
-    if (rssi >= -50) {
-      signalQuality = _(WIFI_EXCELLENT);
-    } else if (rssi >= -60) {
-      signalQuality = _(WIFI_GOOD);
-    } else if (rssi >= -70) {
-      signalQuality = _(WIFI_FAIR);
-    } else {
-      signalQuality = _(WIFI_WEAK);
+
+    if (currentConnection == CONN_WIFI) {
+      connectionMode = "WiFi";
+      rssi = WiFi.RSSI();
+
+      if (rssi >= -50) {
+        signalQuality = _(WIFI_EXCELLENT);
+      } else if (rssi >= -60) {
+        signalQuality = _(WIFI_GOOD);
+      } else if (rssi >= -70) {
+        signalQuality = _(WIFI_FAIR);
+      } else {
+        signalQuality = _(WIFI_WEAK);
+      }
+    }
+#ifdef KISS_HAS_LTE
+    else if (currentConnection == CONN_LTE) {
+      connectionMode = "LTE";
+      rssi = lte.getSignalStrength();
+
+      if (rssi >= -75) {
+        signalQuality = "Excelente";
+      } else if (rssi >= -85) {
+        signalQuality = "Buena";
+      } else if (rssi >= -95) {
+        signalQuality = "Regular";
+      } else {
+        signalQuality = "Débil";
+      }
+    }
+#endif
+    else {
+      connectionMode = "Ninguna";
+      rssi = 0;
+      signalQuality = "N/A";
     }
 
     // ✅ Preparar buffers para time/date
@@ -332,8 +443,11 @@ void handleMessage(const char* chat_id, const char* text,
       KissTime::getInstance().getTimeString(timeStr, sizeof(timeStr));
       KissTime::getInstance().getDateString(dateStr, sizeof(dateStr));
     }
-    char status[1300];
-    snprintf(status, sizeof(status),
+    // Buffer más grande para incluir stats LTE
+    char status[1500];
+
+    // Construir mensaje base
+    int offset = snprintf(status, sizeof(status),
              "📦 KissTelegram v%s\n"
              "📨 Build: %s (0x%08X)\n\n"
 
@@ -356,10 +470,8 @@ void handleMessage(const char* chat_id, const char* text,
              "💿 %s: %d bytes\n"  // FREE_FS
              "💾 %s: %d %s\n"  // MAX_FS
              "🔋 %s: %d \n"  // POWER_MODE
-             "📡 %s: %d dBm (%s)\n"  // WIFI_SIGNAL
-             "🔒 %s: %s\n"  // SSL
-             "🚀 %s: %s\n"  // TURBO
-             "🤖 %s: %s",  // AUTO_MSGS
+             "🌐 Conexión: %s\n"  // CONNECTION_MODE
+             "📡 RSSI: %d dBm (%s)\n",  // SIGNAL
 
              KISS_GET_VERSION(),
              BUILD_TIMESTAMP, getBuildHash(),
@@ -383,10 +495,41 @@ void handleMessage(const char* chat_id, const char* text,
              _(STATUS_FREE_FS), bot->getFreeStorage(),
              _(STATUS_MAX_FS), KISS_MAX_FS_QUEUE, _(STATUS_MESSAGES),
              _(STATUS_POWER_MODE), bot->getCurrentPowerMode(),
-             _(STATUS_WIFI_SIGNAL), rssi, signalQuality,
+             connectionMode,
+             rssi, signalQuality);
+
+    // ✅ Añadir estadísticas LTE si se está usando LTE
+#ifdef KISS_HAS_LTE
+    if (currentConnection == CONN_LTE && bot->isUsingLTE()) {
+      unsigned long sleepTime = lte.getTimeInSleepMode();
+      unsigned long activeTime = lte.getTimeInActiveMode();
+      float efficiency = lte.getSleepEfficiency();
+
+      // Convertir milisegundos a formato legible
+      unsigned long sleepMin = sleepTime / 60000;
+      unsigned long sleepSec = (sleepTime % 60000) / 1000;
+      unsigned long activeMin = activeTime / 60000;
+      unsigned long activeSec = (activeTime % 60000) / 1000;
+
+      offset += snprintf(status + offset, sizeof(status) - offset,
+                        "\n\n⚡ ESTADÍSTICAS LTE\n"
+                        "😴 Sleep: %lum %lus\n"
+                        "🔋 Activo: %lum %lus\n"
+                        "📊 Eficiencia: %.1f%%",
+                        sleepMin, sleepSec,
+                        activeMin, activeSec,
+                        efficiency);
+    }
+#endif
+
+    offset += snprintf(status + offset, sizeof(status) - offset,
+             "\n🔒 %s: %s\n"  // SSL
+             "🚀 %s: %s\n"  // TURBO
+             "🤖 %s: %s",  // AUTO_MSGS
              _(STATUS_SSL), bot->isSSLSecure() ? _(STATUS_SSL_SECURE) : _(STATUS_SSL_INSECURE),
              _(STATUS_TURBO), bot->isTurboMode() ? _(STATUS_ACTIVE) : _(STATUS_INACTIVE),
              _(STATUS_AUTO_MSGS), config.getAutoMessagesEnabled() ? _(STATUS_YES) : _(STATUS_NO));
+
     bot->sendMessage(chat_id, status);
   } else if (strcmp(command, "/config") == 0) {
     config.printConfig();
@@ -433,7 +576,7 @@ void handleMessage(const char* chat_id, const char* text,
     int pending = 0;
     char* pos = content;
     while (true) {
-      pos = strstr(pos, "\"s\":0");  // ✅ strstr() para char[], es string pero se destruye al terminar la expr.
+      pos = strstr(pos, "\"s\":0");  //string pero se destruye al terminar la expr.
       if (!pos) break;
       pending++;
       pos += 5;
@@ -454,7 +597,7 @@ void handleMessage(const char* chat_id, const char* text,
     snprintf(memInfo, sizeof(memInfo),
              "💾 INFORMACIÓN MEMORIA\n\n"
              "Libre: %d bytes\n"
-             "Mí­nimo: %d bytes\n"
+             "Mínimo: %d bytes\n"
              "Máximo alloc: %d bytes\n"
              "Tamaño heap: %d bytes\n"
              "LittleFS usado: %d bytes",
@@ -599,6 +742,65 @@ void handleMessage(const char* chat_id, const char* text,
              KissTelegram::getFreeMemory(),
              bot->getCurrentPowerMode());
     bot->sendMessage(chat_id, statsMsg);
+
+#ifdef KISS_HAS_LTE
+  } else if (strcmp(command, "/lte") == 0) {
+    // Comando solo disponible si se está usando LTE
+    if (currentConnection != CONN_LTE || !bot->isUsingLTE()) {
+      bot->sendMessage(chat_id, "⚠️ Comando solo disponible en modo LTE");
+      return;
+    }
+
+    unsigned long sleepTime = lte.getTimeInSleepMode();
+    unsigned long activeTime = lte.getTimeInActiveMode();
+    unsigned long currentModeTime = lte.getCurrentModeTime();
+    float efficiency = lte.getSleepEfficiency();
+
+    // Convertir a horas/minutos/segundos
+    unsigned long sleepH = sleepTime / 3600000;
+    unsigned long sleepM = (sleepTime % 3600000) / 60000;
+    unsigned long sleepS = (sleepTime % 60000) / 1000;
+
+    unsigned long activeH = activeTime / 3600000;
+    unsigned long activeM = (activeTime % 3600000) / 60000;
+    unsigned long activeS = (activeTime % 60000) / 1000;
+
+    unsigned long currentM = currentModeTime / 60000;
+    unsigned long currentS = (currentModeTime % 60000) / 1000;
+
+    // Calcular consumo estimado promedio
+    int currentConsumption = lte.getCurrentConsumption();
+    float avgConsumption = (sleepTime * 7.0 + activeTime * 100.0) / (sleepTime + activeTime);
+
+    const char* currentModeStr = lte.getPowerMode() == CLIENT_POWER_LOW ? "SLEEP" :
+                                 lte.getPowerMode() == CLIENT_POWER_IDLE ? "IDLE" :
+                                 lte.getPowerMode() == CLIENT_POWER_MAINTENANCE ? "MAINT" :
+                                 "ACTIVO";
+
+    char lteMsg[600];
+    snprintf(lteMsg, sizeof(lteMsg),
+             "📡 ESTADÍSTICAS LTE DETALLADAS\n\n"
+             "⚡ CONSUMO\n"
+             "🔌 Actual: %d mA (%s)\n"
+             "📊 Promedio: %.1f mA\n\n"
+             "⏱️ TIEMPOS\n"
+             "😴 Sleep: %luh %lum %lus\n"
+             "🔋 Activo: %luh %lum %lus\n"
+             "📈 Eficiencia: %.1f%%\n\n"
+             "🔄 MODO ACTUAL\n"
+             "⚙️ %s (hace %lum %lus)\n\n"
+             "💡 TIP: En SLEEP el consumo\n"
+             "es 3-7 mA vs 100 mA activo",
+             currentConsumption, currentModeStr,
+             avgConsumption,
+             sleepH, sleepM, sleepS,
+             activeH, activeM, activeS,
+             efficiency,
+             currentModeStr, currentM, currentS);
+
+    bot->sendMessage(chat_id, lteMsg);
+#endif
+
   } else if (strcmp(command, "/time") == 0) {
     if (KissTime::getInstance().isTimeSynced()) {
       char timeStr[32], dateStr[32];
@@ -730,7 +932,12 @@ void handleMessage(const char* chat_id, const char* text,
     } else {
       ota->startOTA();
     }
-  } else if (strcmp(command, "/otapin") == 0 || strcmp(command, "/otapuk") == 0 || strcmp(command, "/otaconfirm") == 0 || strcmp(command, "/otaok") == 0 || strcmp(command, "/otacancel") == 0) {
+  } else if (strcmp(command, "/otaok") == 0) {
+    // ✅ ACK inmediato: comando recibido
+    bot->sendMessage(chat_id, "✅ Comando recibido");
+    Serial.println("🔄 Procesando /otaok - validación de firmware");
+    ota->handleOTACommand(command, param);
+  } else if (strcmp(command, "/otapin") == 0 || strcmp(command, "/otapuk") == 0 || strcmp(command, "/otaconfirm") == 0 || strcmp(command, "/otacancel") == 0) {
     ota->handleOTACommand(command, param);
   }
 #endif
@@ -795,22 +1002,71 @@ void sendTestMessage(const char* message) {
   }
 }
 
-void checkWifiStability() {
+void checkConnectionStability() {
   static bool wasConnected = false;
   bool isConnected = (WiFi.status() == WL_CONNECTED);
 
-  if (wasConnected && !isConnected) {
+  // ========== WiFi se desconectó mientras estaba en modo WiFi ==========
+  if (currentConnection == CONN_WIFI && wasConnected && !isConnected) {
     stats.wifiDropouts++;
     stats.lastWifiDrop = millis();
-    Serial.println("📡 WiFi DESCONECTADO");
+    Serial.println("\n⚠️ WiFi DESCONECTADO");
     bot->disable();
     wifiAlreadyStable = false;
+
+#ifdef KISS_HAS_LTE
+    // Activar fallback a LTE
+    Serial.println("📡 Activando fallback LTE...");
+    if (lte.powerOn() && lte.connect()) {
+      Serial.println("✅ LTE activado como fallback");
+      currentConnection = CONN_LTE;
+      stats.lteActivations++;
+
+      bot->enable();
+      bot->queueMessage(credentials.getChatId(),
+                       "📡 Sistema usa LTE por fallo WiFi",
+                       KissTelegram::PRIORITY_HIGH);
+    } else {
+      Serial.println("❌ Error: LTE no disponible");
+      currentConnection = CONN_NONE;
+    }
+#endif
   }
 
-  if (!wasConnected && isConnected) {
-    Serial.println("📡 Iniciando sistema, confirmando la Wifi estable y arrancando");
-    Serial.println("    el bot de KissTelegram para evitar Race Conditions y codazos...");
-    SAFE_DELAY(5000);
+#ifdef KISS_HAS_LTE
+  // ========== Estamos en LTE, verificar si WiFi volvió ==========
+  else if (currentConnection == CONN_LTE) {
+    // WiFi volvió - prioridad WiFi
+    if (!wasConnected && isConnected) {
+      Serial.println("\n✅ WiFi detectado, cambiando a WiFi...");
+
+      // Poner LTE en sleep mode (NO desconectar para failover instantáneo)
+      // Mantiene red registrada pero consume solo 10-12mA
+      Serial.println("💤 LTE → modo sleep (listo para failover)");
+      lte.setPowerMode(CLIENT_POWER_IDLE);  // AT+CSCLK=1
+
+      currentConnection = CONN_WIFI;
+      bot->setWifiStable();
+      wifiAlreadyStable = true;
+
+      bot->queueMessage(credentials.getChatId(),
+                       "✅ WiFi restaurado",
+                       KissTelegram::PRIORITY_HIGH);
+    }
+    // Verificar que LTE sigue conectado
+    else if (!lte.isConnected()) {
+      Serial.println("\n⚠️ LTE desconectado, intentando reconectar...");
+      if (!lte.connect()) {
+        Serial.println("❌ LTE no disponible");
+        currentConnection = CONN_NONE;
+      }
+    }
+  }
+#endif
+
+  // ========== WiFi reconectado en modo WiFi inicial ==========
+  if (!wasConnected && isConnected && currentConnection == CONN_WIFI) {
+    Serial.println("📡 WiFi reconectado");
     bot->setWifiStable();
     bot->enable();
     wifiAlreadyStable = true;
@@ -849,6 +1105,13 @@ void checkWifiStability() {
 
 
 void loop() {
+
+#ifdef KISS_HAS_LTE
+  // Procesar URCs y keepalive LTE
+  lte.loop();
+  lte.keepalive();
+#endif
+
 #ifdef KISS_HAS_OTA
   if (ota && ota->isActive()) {
     ota->loop();
@@ -880,7 +1143,7 @@ void loop() {
     lastPowerUpdate = millis();
   }
 
-  checkWifiStability();
+  checkConnectionStability();
 
   // Reducir delay de 1000ms a 100ms cuando hay cola
   // Esto permite procesar mensajes más rápido
@@ -954,18 +1217,83 @@ void loop() {
     lastHeartbeat = millis();
   }
 
-  // Solo hacer ping cuando la cola está vacía (cada 60 segundos)
+  // ✅ OPTIMIZACIÓN LTE: ping adaptativo según tipo de red y power mode
   static unsigned long lastPingTime = 0;
   if (bot && bot->isWifiStable() && pendingCount == 0) {
-    if (bot->hasTimePassed(lastPingTime, 60000)) {
-      if (!bot->pingTelegram()) {
-        KISS_LOG("💓 Ping falló, socket muerto");
+    // Obtener intervalo recomendado según red (WiFi: 60s, LTE: 2-10 min según modo)
+    int pingInterval = bot->getRecommendedPingInterval();
+
+    if (bot->hasTimePassed(lastPingTime, pingInterval)) {
+      // Solo hacer ping si hay conexión activa
+      // En modo LTE low-power, la conexión estará cerrada y esto se saltará
+      if (bot->isConnected()) {
+        if (!bot->pingTelegram()) {
+          KISS_LOG("💓 Ping falló, socket muerto");
+        }
+      } else {
+        // No hay conexión, resetear timer para no intentar constantemente
+        if (bot->isUsingLTE()) {
+          KISS_LOG("📡 LTE: Sin conexión activa (sleep mode activo)");
+        }
       }
       lastPingTime = millis();
     }
   }
 
   bot->checkConnectionAge();
+
+#ifdef KISS_HAS_LTE
+  // ========== PASS-THROUGH SERIAL LTE (DEBUG) ==========
+  // Reenviar comandos desde Serial (Monitor IDE) a Serial1 (LTE)
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+
+    // Comandos especiales para control de pines
+    if (cmd.equalsIgnoreCase("PWRKEY_ON")) {
+      digitalWrite(KISS_LTE_PWRKEY_PIN, HIGH);
+      Serial.println("✅ PWRKEY → HIGH");
+    } else if (cmd.equalsIgnoreCase("PWRKEY_OFF")) {
+      digitalWrite(KISS_LTE_PWRKEY_PIN, LOW);
+      Serial.println("✅ PWRKEY → LOW");
+    } else if (cmd.equalsIgnoreCase("PWRKEY_PULSE")) {
+      digitalWrite(KISS_LTE_PWRKEY_PIN, HIGH);
+      delay(1500);
+      digitalWrite(KISS_LTE_PWRKEY_PIN, LOW);
+      Serial.println("✅ PWRKEY → PULSE (1.5s)");
+    } else if (cmd.equalsIgnoreCase("DTR_HIGH")) {
+      digitalWrite(KISS_LTE_DTR_PIN, HIGH);
+      Serial.println("✅ DTR → HIGH (sleep allowed)");
+    } else if (cmd.equalsIgnoreCase("DTR_LOW")) {
+      digitalWrite(KISS_LTE_DTR_PIN, LOW);
+      Serial.println("✅ DTR → LOW (wake up)");
+    } else if (cmd.equalsIgnoreCase("HELP")) {
+      Serial.println("\n========== COMANDOS LTE DEBUG ==========");
+      Serial.println("Comandos AT: Escribe cualquier comando AT");
+      Serial.println("  Ejemplo: AT, AT+CSQ, AT+COPS?");
+      Serial.println("\nControl PWRKEY:");
+      Serial.println("  PWRKEY_ON    - Pin HIGH");
+      Serial.println("  PWRKEY_OFF   - Pin LOW");
+      Serial.println("  PWRKEY_PULSE - Pulso 1.5s");
+      Serial.println("\nControl DTR:");
+      Serial.println("  DTR_HIGH - Sleep permitido");
+      Serial.println("  DTR_LOW  - Wake up");
+      Serial.println("\nUtilidad:");
+      Serial.println("  HELP - Esta ayuda");
+      Serial.println("========================================\n");
+    } else if (cmd.length() > 0) {
+      // Comando AT normal - enviarlo al LTE
+      Serial1.println(cmd);
+      Serial.printf("→ LTE: %s\n", cmd.c_str());
+    }
+  }
+
+  // Reenviar respuestas del LTE a Serial
+  while (Serial1.available()) {
+    char c = Serial1.read();
+    Serial.write(c);
+  }
+#endif
 
   SAFE_DELAY(loopDelay);
 }

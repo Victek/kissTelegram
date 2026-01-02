@@ -4,7 +4,7 @@
 #ifndef KISS_TELEGRAM_H
 #define KISS_TELEGRAM_H
 
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 #include "KissTime.h"
 #include "KissClient.h"
 #include "KissSSL.h"

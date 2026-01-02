@@ -4,7 +4,7 @@
 
 #include "KissSSL.h"
 #include "KissTime.h"
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 #include "lang.h"
 
 KissSSL::KissSSL()

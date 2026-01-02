@@ -5,7 +5,7 @@
 #ifndef KISS_JSON_H
 #define KISS_JSON_H
 
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 
 class KissJson {
 public:

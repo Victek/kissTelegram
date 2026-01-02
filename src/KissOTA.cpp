@@ -272,11 +272,19 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
 
   // /otaok - Validar firmware nuevo
   else if (strcmp(command, "/otaok") == 0) {
+    KISS_CRITICAL("🔍 Comando /otaok recibido");
+    KISS_LOGF("   Estado actual: %s", getStateName(currentState));
+    KISS_LOGF("   Primera arrancada: %s", isFirstBootAfterOTA() ? "SI" : "NO");
+
     if (currentState == OTA_VALIDATING || isFirstBootAfterOTA()) {
+      KISS_CRITICAL("✅ Condiciones de validación cumplidas - marcando firmware como válido");
+
+      // Mensaje simple: firmware anterior borrado
+      sendOTAMessage("✅ Borrando firmware anterior");
+
       markFirmwareValid();
       transitionState(OTA_CLEANUP);
       cleanupFiles();
-      sendOTAMessage(LANG_OTA_VALIDATED);
       transitionState(OTA_COMPLETE);
 
       // Desactivar maintenance mode
@@ -290,9 +298,10 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
 
       transitionState(OTA_IDLE);
       otaStartTime = 0;
-      KISS_LOG("✅ OTA completado exitosamente");
+      KISS_CRITICAL("🎉 OTA COMPLETADO EXITOSAMENTE - Firmware validado");
     } else {
-      sendOTAMessage("❌ No hay OTA pendiente de validación");
+      KISS_CRITICAL("❌ /otaok recibido pero no hay validación pendiente");
+      sendOTAMessage("❌ No hay OTA pendiente");
     }
   }
 }

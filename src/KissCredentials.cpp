@@ -2,7 +2,7 @@
 // Vicente Soriano - victek@gmail.com
 
 #include "KissCredentials.h"
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 #include "lang.h"
 
 // ========== CONSTRUCTOR ==========
