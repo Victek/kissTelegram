@@ -35,7 +35,7 @@ KissTelegram::KissTelegram(const char* token) {
   lastUpdateID = 0;
 
   lastMessageTime = 0;
-  minMessageInterval = 1000;
+  minMessageInterval = 300;
 
   pollingTimeout = 2;
   adaptivePolling = true;
