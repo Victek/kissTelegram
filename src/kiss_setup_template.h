@@ -103,23 +103,35 @@ inline bool KISS_CHECK_FS_HEALTH() {
 
 
 // ========== CONFIGURACIÓN LTE ================
-#define KISS_LTE_APN ""  // Cambiar según operador
-#define KISS_LTE_USER ""
-#define KISS_LTE_PASS ""
-#define KISS_LTE_PIN ""  // PIN de SIM (cambiar o dejar vacío)
-#define KISS_LTE_MCCMNC "" // Para ir más rápido en el COPS del LTE
+// NOTA: Estas configuraciones LTE ahora se gestionan vía KissCredentials
+// Los valores aquí son solo fallback si no hay credenciales configuradas
 
-/*
-#define KISS_LTE_APN ""  // otra Fallback SIM
-#define KISS_LTE_USER ""
-#define KISS_LTE_PASS ""
-#define KISS_LTE_PIN ""  // PIN de SIM (cambiar o dejar vacío)
-#define KISS_LTE_MCCMNC "" // Para ir más rápido en el COPS del LTE
-*/
+#define KISS_LTE_APN "YOUR_APN"  // Cambiar según operador
+#define KISS_LTE_USER ""    // Si es necesario, si no dejar vacío
+#define KISS_LTE_PASS ""    // Si es necesario, si no dejar vacío
+
+// ⚠️ IMPORTANTE: Se recomienda DESACTIVAR el PIN de la tarjeta SIM
+// Para dispositivos IoT/M2M es mejor usar SIM sin PIN para:
+// - Arranque más rápido y confiable
+// - Menos puntos de fallo
+// - Estándar en producción IoT
+//
+// Cómo quitar PIN a la SIM:
+// 1. Inserta la SIM en un móvil
+// 2. Ve a Ajustes → SIM → Seguridad SIM
+// 3. Desactiva "Bloqueo de SIM" / "PIN de SIM"
+// 4. Retira la SIM e insértala en el módulo LTE
+// Sin sacar la SIM del módulo desde comandos del serial:
+// 1. AT+CPIN?
+// 2. AT+CPIN="TU_PIN"
+// 3. AT+CLCK="SC",0,"TU_PIN"
+// 4. Ya está desbloqueada
+
+
 
 // ========== CONFIGURACION VERSION KISSTELEGRAM ==========
 // ⚠️ PARA CAMBIAR LA VERSIÓN: Edita solo esta línea ⬇️
-#define KISS_SUITE_VERSION "1.0.0"
+#define KISS_SUITE_VERSION "1.1.0"
 // ⚠️ Fin de configuración de versión ⬆️
 
 // Helper para obtener versión
@@ -136,7 +148,6 @@ inline const char* KISS_GET_VERSION() {
 #define KISS_NVS_OTA_PIN_KEY "ota_pin"
 #define KISS_NVS_OTA_PUK_KEY "ota_puk"
 #define KISS_NVS_OTA_LOCKED_KEY "ota_locked"
-#define KISS_NVS_SIM_PIN_KEY "sim_pin"
 #define KISS_NVS_LTE_APN_KEY "lte_apn"
 #define KISS_NVS_LTE_USER_KEY "lte_user"
 #define KISS_NVS_LTE_PASS_KEY "lte_pass"
@@ -300,8 +311,10 @@ inline bool KISS_CHECK_HEAP() {
 #define KISS_LTE_ENABLED true
 #define KISS_LTE_RX_PIN 18
 #define KISS_LTE_TX_PIN 17
-#define KISS_LTE_PWRKEY_PIN 16 //PWRKEY LTE
-#define KISS_LTE_DTR_PIN 15  // DTR LTE
+#define KISS_LTE_PWRKEY_PIN 16   // PWRKEY LTE
+#define KISS_LTE_STATUS_PIN 7    // STATUS LTE (HIGH=ON, LOW=OFF)
+#define KISS_LTE_RESET_PIN 6     // RESET LTE (pulso LOW para resetear)
+#define KISS_LTE_DTR_PIN 15      // DTR LTE (sleep control)
 
 // Timeout WiFi antes de fallback a LTE (milisegundos)
 #define KISS_WIFI_TIMEOUT_MS 30000

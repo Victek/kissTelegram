@@ -4,6 +4,7 @@
 #include "KissTelegram.h"
 #include "KissConfig.h"
 #include "KissTime.h"
+#include "KissNet.h"
 #include <Arduino.h>
 #include "lang.h"
 
@@ -20,10 +21,11 @@ KissTelegram::KissTelegram(const char* token) {
   strncpy(botToken, token, sizeof(botToken) - 1);
   botToken[sizeof(botToken) - 1] = '\0';
 
-  // Inicializar cliente de red (WiFi o LTE según configuración)
-  networkClient = nullptr;
-  usingLTE = false;
-  initializeNetworkClient();
+  // Crear KissNet para gestión unificada WiFi/LTE
+  kissNet = new KissNet();
+
+  // Inicializar KissNet (cargará credenciales automáticamente)
+  kissNet->begin();
 
   sslSecure = false;
 
@@ -35,28 +37,24 @@ KissTelegram::KissTelegram(const char* token) {
   lastUpdateID = 0;
 
   lastMessageTime = 0;
-  minMessageInterval = 300;
+  minMessageInterval = 1000;
 
   pollingTimeout = 2;
   adaptivePolling = true;
 
   maxRetryAttempts = 3;
-  baseBackoffMs = 1000;
-  maxBackoffMs = 10000;
   fileReceivedCallback = nullptr;
 
   jsonBuffer = new char[JSON_BUFFER_SIZE];
   messageBuffer = new char[MESSAGE_BUFFER_SIZE];
   commandBuffer = new char[COMMAND_BUFFER_SIZE];
   paramBuffer = new char[PARAM_BUFFER_SIZE];
-  maxMessageSize = 256;
 
   storageEnabled = true;
   storageMode = STORAGE_FULL;
   maxQueueStorage = KISS_MAX_FS_QUEUE;
   lastSaveTime = 0;
   autoSaveInterval = 300000;
-  storageCompression = false;
   nextMsgId = 1;
 
   // ⚡ Inicializar caché
@@ -64,7 +62,6 @@ KissTelegram::KissTelegram(const char* token) {
   lastCountCheck = 0;
 
   operationMode = MODE_BALANCED;
-  connectionTimeout = 10000;
   wifiStabilityThreshold = 30000;
   diagnosticsVerbose = true;
   startTime = millis();
@@ -137,13 +134,10 @@ KissTelegram::~KissTelegram() {
 
   disable();
 
-  if (networkClient) {
-    networkClient->disconnect();
-    // Solo eliminar si es KissSSL (KissLTE es singleton)
-    if (!usingLTE) {
-      delete networkClient;
-    }
-    networkClient = nullptr;
+  if (kissNet) {
+    kissNet->end();  // KissNet se encarga de limpiar WiFi/LTE
+    delete kissNet;
+    kissNet = nullptr;
   }
 
   if (jsonBuffer) delete[] jsonBuffer;
@@ -166,8 +160,9 @@ void KissTelegram::enable() {
 
 void KissTelegram::disable() {
   enabled = false;
-  if (networkClient && networkClient->isConnected()) {
-    networkClient->disconnect();
+  KissClient* client = kissNet->getActiveClient();
+  if (client && client->isConnected()) {
+    client->disconnect();
   }
 }
 
@@ -192,29 +187,11 @@ int KissTelegram::getMinMessageInterval() {
   return minMessageInterval;
 }
 
-void KissTelegram::setMaxMessageSize(int size) {
-  maxMessageSize = max(64, min(size, 4096));
-}
-int KissTelegram::getMaxMessageSize() {
-  return maxMessageSize;
-}
-
 void KissTelegram::setMaxRetryAttempts(int attempts) {
   maxRetryAttempts = max(1, attempts);
 }
 int KissTelegram::getMaxRetryAttempts() {
   return maxRetryAttempts;
-}
-
-void KissTelegram::setRetryBackoff(int baseMs, int maxMs) {
-  baseBackoffMs = max(100, baseMs);
-  maxBackoffMs = maxMs > 0 ? max(maxBackoffMs, baseBackoffMs) : 0;
-}
-int KissTelegram::getRetryBackoffBase() {
-  return baseBackoffMs;
-}
-int KissTelegram::getRetryBackoffMax() {
-  return maxBackoffMs;
 }
 
 void KissTelegram::enableStorage(bool enable) {
@@ -239,13 +216,6 @@ void KissTelegram::setAutoSaveInterval(unsigned long intervalMs) {
 }
 unsigned long KissTelegram::getAutoSaveInterval() {
   return autoSaveInterval;
-}
-
-void KissTelegram::setStorageCompression(bool enable) {
-  storageCompression = enable;
-}
-bool KissTelegram::getStorageCompression() {
-  return storageCompression;
 }
 
 void KissTelegram::applyOperationMode() {
@@ -277,20 +247,6 @@ KissTelegram::OperationMode KissTelegram::getOperationMode() {
   return operationMode;
 }
 
-void KissTelegram::setConnectionTimeout(int timeoutMs) {
-  connectionTimeout = max(1000, timeoutMs);
-}
-int KissTelegram::getConnectionTimeout() {
-  return connectionTimeout;
-}
-
-void KissTelegram::setWifiStabilityThreshold(int minUptimeMs) {
-  wifiStabilityThreshold = max(5000, minUptimeMs);
-}
-int KissTelegram::getWifiStabilityThreshold() {
-  return wifiStabilityThreshold;
-}
-
 void KissTelegram::setDiagnosticsVerbose(bool verbose) {
   diagnosticsVerbose = verbose;
 }
@@ -306,7 +262,8 @@ void KissTelegram::setPowerMode(PowerMode mode) {
   powerModeChangeTime = millis();
 
   // Sincronizar con KissClient (WiFi/LTE)
-  if (networkClient) {
+  KissClient* client = kissNet->getActiveClient();
+  if (client) {
     KissClientPowerMode clientMode;
     switch (mode) {
       case POWER_BOOT:
@@ -331,15 +288,13 @@ void KissTelegram::setPowerMode(PowerMode mode) {
         clientMode = CLIENT_POWER_ACTIVE;
     }
 
-    networkClient->setPowerMode(clientMode);
+    client->setPowerMode(clientMode);
 
     // ✅ OPTIMIZACIÓN LTE: aplicar optimizaciones de conexión
     optimizeConnectionForNetwork();
 
     if (diagnosticsVerbose) {
-      KISS_LOGF("⚡ Power mode: %s → Consumo estimado: %d mA",
-                networkClient->getClientType(),
-                networkClient->getCurrentConsumption());
+      KISS_LOGF("⚡ Power mode: %s", client->getClientType());
     }
   }
 
@@ -493,25 +448,27 @@ void KissTelegram::resetPowerStatistics() {
 
 // ========== OPERACIONES MENSAJES ==========
 void KissTelegram::cleanupConnection() {
-    if(!networkClient) return;
-    
+    KissClient* client = kissNet->getActiveClient();
+    if(!client) return;
+
     // ✅ SOLO cerrar si el socket está realmente muerto
-    if(networkClient->isConnected()) {
+    if(client->isConnected()) {
         KISS_LOG(LANG_INFO_CON_RESUME);
         return;  // ← NO cerrar conexiones vivas
     }
-    
+
     // ❌ Solo limpiar sockets zombies
     KISS_LOG(LANG_INFO_CON_DIE);
-    networkClient->stop();
+    client->stop();
 }
 
 bool KissTelegram::isConnectionAlive() {
-    if(!networkClient || !networkClient->isConnected()) {
+    KissClient* client = kissNet->getActiveClient();
+    if(!client || !client->isConnected()) {
         return false;
     }
 
-    // DISABLED: Si el socket muere, networkClient->isConnected() lo detectará
+    // DISABLED: Si el socket muere, client->isConnected() lo detectará
 
     return true;
 }
@@ -542,32 +499,35 @@ bool KissTelegram::sendMessage(const char* chat_id, const char* text, MessagePri
     }
 
     // CONSTRUIR Y ENVIAR MENSAJE
-    networkClient->print("POST /bot");
-    networkClient->print(botToken);
-    networkClient->print("/sendMessage HTTP/1.1\r\n");
-    networkClient->print("Host: api.telegram.org\r\n");
-    networkClient->print("Content-Type: application/json\r\n");
+    KissClient* client = kissNet->getActiveClient();
+    if (!client) return false;
+
+    client->print("POST /bot");
+    client->print(botToken);
+    client->print("/sendMessage HTTP/1.1\r\n");
+    client->print("Host: api.telegram.org\r\n");
+    client->print("Content-Type: application/json\r\n");
 
     // Calcular longitud del JSON
     char jsonLengthStr[10];
     int jsonLength = snprintf(nullptr, 0, "{\"chat_id\":\"%s\",\"text\":\"%s\"}", chat_id, text);
     snprintf(jsonLengthStr, sizeof(jsonLengthStr), "%d", jsonLength);
 
-    networkClient->print("Content-Length: ");
-    networkClient->print(jsonLengthStr);
+    client->print("Content-Length: ");
+    client->print(jsonLengthStr);
 
     // ✅ OPTIMIZACIÓN LTE: usar Connection header apropiado
     if (shouldUseKeepAlive()) {
-        networkClient->print("\r\nConnection: keep-alive\r\n\r\n");
+        client->print("\r\nConnection: keep-alive\r\n\r\n");
     } else {
-        networkClient->print("\r\nConnection: close\r\n\r\n");
+        client->print("\r\nConnection: close\r\n\r\n");
     }
 
-    networkClient->print("{\"chat_id\":\"");
-    networkClient->print(chat_id);
-    networkClient->print("\",\"text\":\"");
-    networkClient->print(text);
-    networkClient->print("\"}");
+    client->print("{\"chat_id\":\"");
+    client->print(chat_id);
+    client->print("\",\"text\":\"");
+    client->print(text);
+    client->print("\"}");
 
     //LEER RESPUESTA
     TgAck ack;
@@ -620,32 +580,35 @@ bool KissTelegram::sendMessageDirect(const char* chat_id, const char* text) {
     }
 
     // Construir y enviar mensaje
-    networkClient->print("POST /bot");
-    networkClient->print(botToken);
-    networkClient->print("/sendMessage HTTP/1.1\r\n");
-    networkClient->print("Host: api.telegram.org\r\n");
-    networkClient->print("Content-Type: application/json\r\n");
+    KissClient* client = kissNet->getActiveClient();
+    if (!client) return false;
+
+    client->print("POST /bot");
+    client->print(botToken);
+    client->print("/sendMessage HTTP/1.1\r\n");
+    client->print("Host: api.telegram.org\r\n");
+    client->print("Content-Type: application/json\r\n");
 
     // Calcular longitud del JSON
     char jsonLengthStr[10];
     int jsonLength = snprintf(nullptr, 0, "{\"chat_id\":\"%s\",\"text\":\"%s\"}", chat_id, text);
     snprintf(jsonLengthStr, sizeof(jsonLengthStr), "%d", jsonLength);
 
-    networkClient->print("Content-Length: ");
-    networkClient->print(jsonLengthStr);
+    client->print("Content-Length: ");
+    client->print(jsonLengthStr);
 
     // ✅ OPTIMIZACIÓN LTE: usar Connection header apropiado
     if (shouldUseKeepAlive()) {
-        networkClient->print("\r\nConnection: keep-alive\r\n\r\n");
+        client->print("\r\nConnection: keep-alive\r\n\r\n");
     } else {
-        networkClient->print("\r\nConnection: close\r\n\r\n");
+        client->print("\r\nConnection: close\r\n\r\n");
     }
 
-    networkClient->print("{\"chat_id\":\"");
-    networkClient->print(chat_id);
-    networkClient->print("\",\"text\":\"");
-    networkClient->print(text);
-    networkClient->print("\"}");
+    client->print("{\"chat_id\":\"");
+    client->print(chat_id);
+    client->print("\",\"text\":\"");
+    client->print(text);
+    client->print("\"}");
 
     // Leer respuesta
     TgAck ack;
@@ -708,6 +671,15 @@ void KissTelegram::processQueue() {
   if (maintenanceMode) return;
   if (!shouldProcessQueue()) return;
   if (!isWifiStable()) return;
+
+  // Activación automática de turbo mode si hay muchos mensajes pendientes
+  if (!turboMode) {
+    int pending = getMessagesInFS();
+    if (pending > 20) {
+      KISS_LOG("🚀 Auto-activando TURBO MODE (>20 mensajes pendientes)");
+      enableTurboMode();
+    }
+  }
 
   // Determinar cuántos mensajes procesar por ciclo
   int maxPerCycle = turboMode ? 10 : 5;
@@ -815,20 +787,23 @@ bool KissTelegram::checkMessages(void (*handler)(const char*, const char*, const
   snprintf(offsetStr, sizeof(offsetStr), "%ld", lastUpdateID + 1);
   snprintf(timeoutStr, sizeof(timeoutStr), "%d", timeout);
 
-  networkClient->print("GET /bot");
-  networkClient->print(botToken);
-  networkClient->print("/getUpdates?offset=");
-  networkClient->print(offsetStr);
-  networkClient->print("&timeout=");
-  networkClient->print(timeoutStr);
-  networkClient->print("&limit=10 HTTP/1.1\r\n");
-  networkClient->print("Host: api.telegram.org\r\n");
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) return false;
+
+  client->print("GET /bot");
+  client->print(botToken);
+  client->print("/getUpdates?offset=");
+  client->print(offsetStr);
+  client->print("&timeout=");
+  client->print(timeoutStr);
+  client->print("&limit=10 HTTP/1.1\r\n");
+  client->print("Host: api.telegram.org\r\n");
 
   // ✅ OPTIMIZACIÓN LTE: usar Connection header apropiado
   if (shouldUseKeepAlive()) {
-      networkClient->print("Connection: keep-alive\r\n\r\n");
+      client->print("Connection: keep-alive\r\n\r\n");
   } else {
-      networkClient->print("Connection: close\r\n\r\n");
+      client->print("Connection: close\r\n\r\n");
   }
 
   if (!readResponse()) {
@@ -982,18 +957,6 @@ bool KissTelegram::checkMessages(void (*handler)(const char*, const char*, const
   return processedAny;
 }
 
-void KissTelegram::setPollingTimeout(int seconds) {
-  pollingTimeout = max(0, min(seconds, 10));
-}
-
-int KissTelegram::getPollingTimeout() {
-  return pollingTimeout;
-}
-
-void KissTelegram::setAdaptivePolling(bool enable) {
-  adaptivePolling = enable;
-}
-
 // ========== SSL Casi inteligente.. más que yo, seguro ==========
 bool KissTelegram::trySecureConnection() {
   KISS_LOG(LANG_WARN_TSSL);
@@ -1003,15 +966,15 @@ bool KissTelegram::trySecureConnection() {
   KISS_LOGF(LANG_INFO_TSYNC);
   KISS_LOGF(LANG_INFO_FRAM, ESP.getFreeHeap());
 
-  // Configurar certificado (setCACert retorna void)
-  networkClient->setCACert(TELEGRAM_ROOT_CA);
-  KISS_LOG(LANG_INFO_CERT);
-
-  // Verificar mediante el getter
-  if (!networkClient) {
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) {
     KISS_CRITICAL(LANG_ERROR_SSLCLI);
     return false;
   }
+
+  // Configurar certificado (setCACert retorna void)
+  client->setCACert(TELEGRAM_ROOT_CA);
+  KISS_LOG(LANG_INFO_CERT);
 
   // Test de conectividad básica primero
   KISS_LOG(LANG_INFO_TEST_BASIC);
@@ -1027,7 +990,7 @@ bool KissTelegram::trySecureConnection() {
 
   // Ahora SSL
   unsigned long startTime = millis();
-  bool connected = networkClient->connect("api.telegram.org", 443);
+  bool connected = client->connect("api.telegram.org", 443);
   unsigned long connectTime = millis() - startTime;
 
   KISS_LOGF(LANG_INFO_SSL_TEST, connectTime);
@@ -1037,12 +1000,12 @@ bool KissTelegram::trySecureConnection() {
 
     // Verificar certificado solo si el NTP está sincronizado
     if (timeSynced) {
-      if (networkClient->verify("api.telegram.org", NULL)) {
+      if (client->verify("api.telegram.org", NULL)) {
         KISS_LOG(LANG_INFO_CERT_VERI);
         sslSecure = true;
       } else {
         KISS_CRITICAL(LANG_INFO_CERT_FAIL);
-        networkClient->stop();
+        client->stop();
         return false;
       }
     } else {
@@ -1057,13 +1020,16 @@ bool KissTelegram::trySecureConnection() {
 }
 
 bool KissTelegram::tryInsecureConnection() {
-  networkClient->setInsecure();
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) return false;
+
+  client->setInsecure();
 
   // DIAGNÓSTICO
   KISS_LOGF(LANG_INFO_FRRAM, ESP.getFreeHeap());
 
   unsigned long startTime = millis();
-  bool connected = networkClient->connect("api.telegram.org", 443);
+  bool connected = client->connect("api.telegram.org", 443);
   unsigned long connectTime = millis() - startTime;
 
   if (connected) {
@@ -1074,12 +1040,6 @@ bool KissTelegram::tryInsecureConnection() {
     KISS_LOGF(LANG_ERROR_INSECURE, connectTime);
     return false;
   }
-}
-
-String KissTelegram::getSSLInfo() {
-  char info[256];  // Buffer fijo en lugar de String
-  snprintf(info, sizeof(info), LANG_INFO_SSL);
-  return String(info);  // Solo una conversión al final
 }
 
 // ========== MANEJO SEGURO DE TIEMPO ==========
@@ -1647,10 +1607,13 @@ int KissTelegram::countPendingMessages() {
 // ========== JSON HELPERS ==========
 
 int KissTelegram::findJSONValue(const String& json, const char* key, int startPos) {
-  String searchKey = String("\"") + key + "\":";
+  // Construir clave de búsqueda: "key":
+  char searchKey[64];
+  snprintf(searchKey, sizeof(searchKey), "\"%s\":", key);
+
   int pos = json.indexOf(searchKey, startPos);
   if (pos < 0) return -1;
-  pos += searchKey.length();
+  pos += strlen(searchKey);
   while (pos < json.length() && json.charAt(pos) == ' ') pos++;
   return pos;
 }
@@ -1759,27 +1722,60 @@ bool KissTelegram::restoreFromLittleFS() {
     return false;
   }
 
+  char line[256];
   while (file.available()) {
-    String line = file.readStringUntil('\n');
-    line.trim();
-    if (line.startsWith("NEXTMSGID:")) nextMsgId = line.substring(10).toInt();
-    else if (line.startsWith("OFFSET:")) lastUpdateID = line.substring(7).toInt();
-    else if (line.startsWith("ENABLED:")) enabled = (line.substring(8).toInt() == 1);
-    else if (line.startsWith("MINMSGINTERVAL:")) minMessageInterval = line.substring(15).toInt();
-    else if (line.startsWith("PENDINGDELETES:")) {
-      pendingDeletes = line.substring(15).toInt();
+    int idx = 0;
+    // Leer línea carácter por carácter
+    while (file.available() && idx < sizeof(line) - 1) {
+      char c = file.read();
+      if (c == '\n') break;
+      if (c != '\r') line[idx++] = c;
     }
-    else if (line.startsWith("DELETEQUEUE:")) {
-      String ids = line.substring(12);
-      int idx = 0;
-      int start = 0;
-      for (int i = 0; i <= ids.length() && idx < 15; i++) {  // 25 → 15
-        if (i == ids.length() || ids.charAt(i) == ',') {
-          if (i > start) {
-            deleteQueue[idx++] = ids.substring(start, i).toInt();
+    line[idx] = '\0';
+
+    // Procesar línea
+    if (strncmp(line, "NEXTMSGID:", 10) == 0) {
+      nextMsgId = atoi(line + 10);
+    }
+    else if (strncmp(line, "OFFSET:", 7) == 0) {
+      lastUpdateID = atoi(line + 7);
+    }
+    else if (strncmp(line, "ENABLED:", 8) == 0) {
+      enabled = (atoi(line + 8) == 1);
+    }
+    else if (strncmp(line, "MINMSGINTERVAL:", 15) == 0) {
+      minMessageInterval = atoi(line + 15);
+    }
+    else if (strncmp(line, "PENDINGDELETES:", 15) == 0) {
+      pendingDeletes = atoi(line + 15);
+    }
+    else if (strncmp(line, "DELETEQUEUE:", 12) == 0) {
+      // Parsear lista de IDs separados por comas
+      char* ptr = line + 12;
+      int queueIdx = 0;
+      char numBuf[16];
+      int numIdx = 0;
+
+      while (*ptr && queueIdx < 15) {
+        if (*ptr == ',' || *ptr == '\0') {
+          if (numIdx > 0) {
+            numBuf[numIdx] = '\0';
+            deleteQueue[queueIdx++] = atoi(numBuf);
+            numIdx = 0;
           }
-          start = i + 1;
+          if (*ptr == '\0') break;
+          ptr++;
+        } else {
+          if (numIdx < sizeof(numBuf) - 1) {
+            numBuf[numIdx++] = *ptr;
+          }
+          ptr++;
         }
+      }
+      // Último número si no termina en coma
+      if (numIdx > 0 && queueIdx < 15) {
+        numBuf[numIdx] = '\0';
+        deleteQueue[queueIdx++] = atoi(numBuf);
       }
     }
   }
@@ -1867,6 +1863,94 @@ String KissTelegram::getVersion() {
   return String(KISS_GET_VERSION());
 }
 
+// ========== GESTIÓN DE RED ==========
+
+String KissTelegram::getNetworkInfo() {
+  if (!kissNet) return "Sin KissNet";
+  return kissNet->getConnectionInfo();
+}
+
+String KissTelegram::getNetworkMode() {
+  if (!kissNet) return "DESCONOCIDO";
+
+  KissNet::NetworkMode mode = kissNet->getMode();
+  switch (mode) {
+    case KissNet::MODE_AUTO:
+      return "AUTO (WiFi→LTE)";
+    case KissNet::MODE_WIFI_ONLY:
+      return "WIFI ONLY";
+    case KissNet::MODE_LTE_ONLY:
+      return "LTE ONLY";
+    default:
+      return "DESCONOCIDO";
+  }
+}
+
+bool KissTelegram::setNetworkMode(const char* mode) {
+  if (!kissNet || !mode) return false;
+
+  KissNet::NetworkMode newMode;
+
+  if (strcasecmp(mode, "auto") == 0) {
+    newMode = KissNet::MODE_AUTO;
+  } else if (strcasecmp(mode, "wifi") == 0) {
+    newMode = KissNet::MODE_WIFI_ONLY;
+  } else if (strcasecmp(mode, "lte") == 0) {
+    newMode = KissNet::MODE_LTE_ONLY;
+  } else {
+    return false;  // Modo inválido
+  }
+
+  // Cambiar modo en KissNet
+  bool success = kissNet->setMode(newMode);
+
+  // Guardar en configuración persistente
+  if (success) {
+    KissConfig::getInstance().setNetworkMode((int)newMode);
+  }
+
+  return success;
+}
+
+bool KissTelegram::switchToLTE() {
+  if (!kissNet) return false;
+
+  bool success = kissNet->switchToLTE();
+
+  if (success) {
+    // Actualizar configuración para recordar preferencia
+    KissConfig::getInstance().setNetworkMode((int)KissNet::MODE_LTE_ONLY);
+  }
+
+  return success;
+}
+
+bool KissTelegram::switchToWiFi() {
+  if (!kissNet) return false;
+
+  bool success = kissNet->switchToWiFi();
+
+  if (success) {
+    KissConfig::getInstance().setNetworkMode((int)KissNet::MODE_WIFI_ONLY);
+  }
+
+  return success;
+}
+
+bool KissTelegram::switchToAuto() {
+  if (!kissNet) return false;
+
+  bool success = kissNet->switchToAuto();
+
+  if (success) {
+    KissConfig::getInstance().setNetworkMode((int)KissNet::MODE_AUTO);
+  }
+
+  return success;
+}
+
+// ========== FIN GESTIÓN DE RED ==========
+
 void KissTelegram::getStorageInfo(char* buffer, size_t bufferSize) {
   if (!buffer || bufferSize < 200) return;
   int pending = countPendingMessages();
@@ -1904,7 +1988,8 @@ void KissTelegram::checkConnectionAge() {
     static unsigned long connectionStartTime = 0;
 
     // Si no hay conexión, resetear el contador
-    if(!networkClient || !networkClient->isConnected()) {
+    KissClient* client = kissNet->getActiveClient();
+    if(!client || !client->isConnected()) {
         connectionStartTime = 0;
         return;
     }
@@ -2009,21 +2094,25 @@ bool KissTelegram::testBasicConnectivity() {
 }
 
 bool KissTelegram::isConnected() {
-  return networkClient && networkClient->isConnected();
+  KissClient* client = kissNet->getActiveClient();
+  return client && client->isConnected();
 }
 
 bool KissTelegram::testSSLConnection() {
   KISS_LOG(LANG_INFO_SSL_TEST_0);
 
-  if (!networkClient) {
-    networkClient = new KissSSL();
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) {
+    KISS_LOG(LANG_ERROR_SSL_TEST_3);
+    return false;
   }
+
   KISS_LOG(LANG_INFO_SSL_TEST_1);
-  bool result = networkClient->connectToTelegram();
+  bool result = client->connectToTelegram();
 
   if (result) {
     KISS_LOG(LANG_INFO_SSL_TEST_2);
-    networkClient->printInfo();
+    client->printInfo();
   } else {
     KISS_LOG(LANG_ERROR_SSL_TEST_3);
   }
@@ -2040,80 +2129,75 @@ bool KissTelegram::connectToTelegram() {
     if (diagnosticsVerbose) {
       KISS_LOGF(LANG_INFO_CON_LIM, now - lastCall);
     }
-    return networkClient->isConnected();
+    KissClient* client = kissNet->getActiveClient();
+    return client && client->isConnected();
   }
 
   lastCall = now;
 
-  if (!networkClient) {
-    networkClient = new KissSSL();
+  // Asegurar conectividad de red (KissNet maneja WiFi↔LTE automáticamente)
+  if (!kissNet->ensureConnection()) {
+    KISS_LOG("❌ Sin conectividad de red");
+    return false;
+  }
+
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) {
+    KISS_LOG("❌ No hay cliente activo");
+    return false;
   }
 
   // Si el socket sigue vivo, no hacemos nada
-  if (networkClient->isConnected()) {
+  if (client->isConnected()) {
     return true;
   }
 
   // AUTO-CONFIGURACIÓN INTELIGENTE basada en NTP
   bool shouldBeSecure = KissTime::getInstance().isTimeSynced();
 
-  if (networkClient && networkClient->isSecureMode() != shouldBeSecure) {
+  if (client->isSecureMode() != shouldBeSecure) {
     if (diagnosticsVerbose) {
       KISS_LOGF(LANG_INFO_SSL_INTELL,
-                networkClient->isSecureMode() ? "SECURE" : "INSECURE",
+                client->isSecureMode() ? "SECURE" : "INSECURE",
                 shouldBeSecure ? "SECURE" : "INSECURE");
     }
-    networkClient->setSecureMode(shouldBeSecure);
+    client->setSecureMode(shouldBeSecure);
   }
 
-  bool ok = networkClient->connectToTelegram();
+  bool ok = client->connectToTelegram();
   if (ok) {
     KISS_LOG(LANG_INFO_SSL_SUCC_1);
     lastPingTime = millis();
-    sslSecure = networkClient->isSecureMode();
+    sslSecure = client->isSecureMode();
     return true;
   }
 
-  // Conexión falló
+  // Conexión falló - KissNet se encarga del failover automático
   KISS_LOG(LANG_ERROR_SSL_FAIL_1);
-
-  // Intentar failover a LTE si estamos usando WiFi
-  if (!usingLTE && isLTEAvailable()) {
-    KISS_LOG("🔄 WiFi falló, intentando failover a LTE...");
-    if (tryFallbackToLTE()) {
-      // LTE conectado, intentar conectar a Telegram
-      if (networkClient->connectToTelegram()) {
-        KISS_LOG("✅ Conectado a Telegram vía LTE");
-        lastPingTime = millis();
-        sslSecure = networkClient->isSecureMode();
-        return true;
-      }
-    }
-  }
-
   return false;
 }
 
 
 bool KissTelegram::pingTelegram() {
-  if (!networkClient || !networkClient->isConnected()) return false;
+  KissClient* client = kissNet->getActiveClient();
+  if (!client || !client->isConnected()) return false;
 
   KISS_LOG(LANG_INFO_PING_TG);
 
   // ✅ Enviar HTTP completo
-  networkClient->print("GET /bot");
-  networkClient->print(botToken);
-  networkClient->print("/getMe HTTP/1.1\r\n");
-  networkClient->print("Host: api.telegram.org\r\n");
+  client->print("GET /bot");
+  client->print(botToken);
+  client->print("/getMe HTTP/1.1\r\n");
+  client->print("Host: api.telegram.org\r\n");
 
   // ✅ OPTIMIZACIÓN LTE: usar Connection header apropiado
   if (shouldUseKeepAlive()) {
-      networkClient->print("Connection: keep-alive\r\n");
+      client->print("Connection: keep-alive\r\n");
   } else {
-      networkClient->print("Connection: close\r\n");
+      client->print("Connection: close\r\n");
   }
 
-  networkClient->print("Content-Length: 0\r\n\r\n");
+  client->print("Content-Length: 0\r\n\r\n");
 
   // Leer y DESCARTAR toda la respuesta del servidor
   // para evitar contaminar el buffer en el siguiente checkMessages()
@@ -2122,9 +2206,9 @@ bool KissTelegram::pingTelegram() {
   int bytesRead = 0;
 
   // Leer hasta que no haya más datos disponibles (con timeout de 100ms sin datos)
-  while (networkClient->connected() && (millis() - timeout < 2000)) {
-    if (networkClient->available()) {
-      char c = networkClient->read();
+  while (client->connected() && (millis() - timeout < 2000)) {
+    if (client->available()) {
+      char c = client->read();
       bytesRead++;
 
       // Solo verificar "200 OK" en los primeros 128 bytes (headers HTTP)
@@ -2171,16 +2255,19 @@ bool KissTelegram::readResponse(TgAck& ack) {
 
   resetBuffers();
 
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) return false;
+
   // Esperar hasta 500ms para que lleguen datos iniciales
   // Esto evita el race condition cuando checkMessages() se ejecuta
   // inmediatamente después de sendMessage()
   unsigned long waitStart = millis();
-  while (!networkClient->available() && networkClient->connected() && (millis() - waitStart < 500)) {
+  while (!client->available() && client->connected() && (millis() - waitStart < 500)) {
     SAFE_YIELD();
   }
 
   // Si no llegaron datos y la conexión murió, salir
-  if (!networkClient->connected() && !networkClient->available()) {
+  if (!client->connected() && !client->available()) {
     return false;
   }
 
@@ -2192,9 +2279,9 @@ bool KissTelegram::readResponse(TgAck& ack) {
   bool foundHttpCode = false;
 
   // Fase 1: Leer headers hasta encontrar Content-Length y "\r\n\r\n"
-  while (networkClient->connected() && (millis() - timeout < 2000)) {
-    if (networkClient->available()) {
-      char c = networkClient->read();
+  while (client->connected() && (millis() - timeout < 2000)) {
+    if (client->available()) {
+      char c = client->read();
       if (pos < JSON_BUFFER_SIZE - 1) jsonBuffer[pos++] = c;
       jsonBuffer[pos] = '\0';  // null-terminate en cada iteración
       timeout = millis();
@@ -2259,10 +2346,13 @@ bool KissTelegram::readResponse(TgAck& ack) {
 }
 
 int KissTelegram::timedRead(unsigned long startTime) {
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) return -1;
+
   while (true) {
-    int c = networkClient->read();
+    int c = client->read();
     if (c >= 0) return c;
-    if (!networkClient->connected()) return -1;
+    if (!client->connected()) return -1;
     if (millis() - startTime > TG_TIMEOUT_MS) return -1;
     SAFE_YIELD();
   }
@@ -2330,25 +2420,26 @@ void KissTelegram::notifyPowerModeChange(PowerMode oldMode, PowerMode newMode) {
 }
 
 void KissTelegram::updateSSLMode() {
-  if (!networkClient) return;
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) return;
 
   bool shouldBeSecure = KissTime::getInstance().isTimeSynced();
 
-  if (networkClient->isSecureMode() != shouldBeSecure) {
-    networkClient->setSecureMode(shouldBeSecure);
+  if (client->isSecureMode() != shouldBeSecure) {
+    client->setSecureMode(shouldBeSecure);
   }
 }
 
 // ========== OPTIMIZACIÓN LTE ==========
 
 bool KissTelegram::isUsingLTE() {
-  return usingLTE;
+  return kissNet && (kissNet->getActiveNetwork() == KissNet::NET_LTE);
 }
 
 bool KissTelegram::shouldUseKeepAlive() {
   // WiFi: usar keep-alive para máxima eficiencia
   // LTE: NO usar keep-alive para permitir sleep mode
-  if (usingLTE) {
+  if (isUsingLTE()) {
     // En modo LTE, solo usar keep-alive en POWER_ACTIVE o POWER_TURBO
     return (currentPowerMode == POWER_ACTIVE || currentPowerMode == POWER_TURBO);
   }
@@ -2368,7 +2459,7 @@ bool KissTelegram::shouldCloseAfterRequest() {
 }
 
 int KissTelegram::getRecommendedPingInterval() {
-  if (usingLTE) {
+  if (isUsingLTE()) {
     // LTE: intervalos más largos según power mode
     switch (currentPowerMode) {
       case POWER_LOW:
@@ -2397,9 +2488,10 @@ int KissTelegram::getRecommendedPingInterval() {
 }
 
 void KissTelegram::optimizeConnectionForNetwork() {
-  if (!networkClient) return;
+  KissClient* client = kissNet->getActiveClient();
+  if (!client) return;
 
-  if (usingLTE) {
+  if (kissNet->getActiveNetwork() == KissNet::NET_LTE) {
     // Configurar modo de ahorro según power mode
     KissClientPowerMode clientMode;
 
@@ -2439,12 +2531,10 @@ void KissTelegram::optimizeConnectionForNetwork() {
         break;
     }
 
-    networkClient->setPowerMode(clientMode);
+    client->setPowerMode(clientMode);
 
-    // Log de consumo estimado
     if (diagnosticsVerbose) {
-      int consumption = networkClient->getCurrentConsumption();
-      KISS_LOGF("⚡ Consumo LTE estimado: %d mA", consumption);
+      KISS_LOG("📡 LTE: optimizaciones aplicadas");
     }
   } else {
     // WiFi: configuración estándar
@@ -2452,133 +2542,4 @@ void KissTelegram::optimizeConnectionForNetwork() {
       KISS_LOG("📶 WiFi: keep-alive estándar");
     }
   }
-}
-
-// ========== networkClient MANAGEMENT ==========
-
-bool KissTelegram::initializeNetworkClient() {
-  // PRIORIDAD 1: Usar WiFi si está conectado
-  if (WiFi.status() == WL_CONNECTED) {
-    KISS_LOG("📶 Inicializando con WiFi...");
-    networkClient = new KissSSL();
-    usingLTE = false;
-    KISS_LOG("✅ WiFi inicializado");
-    return true;
-  }
-
-  // PRIORIDAD 2: Si WiFi no está conectado, intentar LTE (si está disponible)
-#if KISS_LTE_ENABLED
-  if (isLTEAvailable()) {
-    KISS_LOG("📡 WiFi no disponible, inicializando con LTE (A7672E)...");
-    KissLTE& lte = KissLTE::getInstance();
-
-    // El LTE ya debería estar inicializado en setup(), solo verificamos
-    if (lte.powerOn() && lte.connect()) {
-      networkClient = &lte;
-      usingLTE = true;
-
-      KISS_LOG("✅ LTE inicializado correctamente");
-      return true;
-    }
-    KISS_LOG("❌ Error inicializando LTE");
-  }
-#endif
-
-  // FALLBACK FINAL: WiFi en modo fallback (aunque no esté conectado)
-  KISS_LOG("⚠️ Usando WiFi como fallback (desconectado)");
-  networkClient = new KissSSL();
-  usingLTE = false;
-  return true;
-}
-
-bool KissTelegram::isLTEAvailable() {
-#if KISS_LTE_ENABLED
-  // Verificar que el APN esté configurado (no sea el placeholder)
-  if (strlen(KISS_LTE_APN) == 0 || strcmp(KISS_LTE_APN, "YOUR_APN") == 0) {
-    return false;
-  }
-  return true;
-#else
-  return false;
-#endif
-}
-
-bool KissTelegram::tryFallbackToLTE() {
-#if KISS_LTE_ENABLED
-  if (usingLTE) {
-    // Ya estamos usando LTE
-    return false;
-  }
-
-  if (!isLTEAvailable()) {
-    KISS_LOG("❌ LTE no disponible para failover");
-    return false;
-  }
-
-  KISS_LOG("🔄 Intentando failover WiFi → LTE...");
-  
-  // Limpiar cliente WiFi anterior
-  if (networkClient) {
-    networkClient->disconnect();
-    delete networkClient;
-    networkClient = nullptr;
-  }
-
-  // Inicializar LTE
-  KissLTE& lte = KissLTE::getInstance();
-  if (!lte.begin()) {
-    KISS_LOG("❌ Error inicializando LTE para failover");
-    // Volver a crear cliente WiFi
-    networkClient = new KissSSL();
-    usingLTE = false;
-    return false;
-  }
-
-  if (!lte.powerOn()) {
-    KISS_LOG("❌ Error encendiendo módulo LTE");
-    networkClient = new KissSSL();
-    usingLTE = false;
-    return false;
-  }
-
-  // Configurar credenciales
-  if (strlen(KISS_LTE_APN) > 0) {
-    lte.setAPN(KISS_LTE_APN, KISS_LTE_USER, KISS_LTE_PASS);
-  }
-  if (strlen(KISS_LTE_PIN) > 0) {
-    lte.setPIN(KISS_LTE_PIN);
-  }
-
-  // Esperar registro en red (timeout 30s)
-  KISS_LOG("⏳ Esperando registro LTE en red...");
-  unsigned long startTime = millis();
-  while (lte.getState() != KissLTE::STATE_CONNECTED && (millis() - startTime < KISS_WIFI_TIMEOUT_MS)) {
-    delay(1000);
-    KISS_LOGF("   Estado LTE: %s", lte.getStateString());
-  }
-
-  if (lte.getState() == KissLTE::STATE_CONNECTED) {
-    networkClient = &lte;
-    usingLTE = true;
-    KISS_LOG("✅ Failover a LTE exitoso");
-    
-    // Log información del operador
-    char operatorName[32];
-    if (lte.getOperator(operatorName, sizeof(operatorName))) {
-      KISS_LOGF("   Operador: %s", operatorName);
-    }
-    KISS_LOGF("   Señal: %d dBm", lte.getSignalStrength());
-    
-    return true;
-  } else {
-    KISS_LOG("❌ LTE no pudo registrarse en red");
-    // Volver a WiFi
-    networkClient = new KissSSL();
-    usingLTE = false;
-    return false;
-  }
-#else
-  KISS_LOG("❌ LTE no compilado (KISS_LTE_ENABLED = false)");
-  return false;
-#endif
 }

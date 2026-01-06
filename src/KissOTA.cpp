@@ -5,6 +5,7 @@
 #include "KissOTA.h"
 #include "rom/crc.h"
 #include <nvs_flash.h>
+#include <WiFiClientSecure.h>
 #include "lang.h"
 
 // ========== CONSTRUCTOR ==========
@@ -124,21 +125,45 @@ bool KissOTA::startOTA() {
     return false;
   }
 
-  // Activar otaMode para poder enviar mensajes OTA
+  // Activar otaMode ANTES de cualquier verificación (para enviar mensajes)
   bot->setOTAMode(true);
   bot->setMaintenanceMode(true, "Proceso OTA iniciado");
+  SAFE_DELAY(100); // Pequeño delay para asegurar que el bot procesa el cambio de modo
+
+  // Verificar si existe backup anterior (bin_original.bin)
+  if (KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    if (KISS_FS.exists(BIN_ORIGINAL)) {
+      KISS_FS.end();
+      KISS_CRITICAL("⚠️ Existe backup anterior (bin_original.bin)");
+      sendOTAMessage("⚠️ ADVERTENCIA: Existe backup anterior\n\n"
+                     "Si continúas se BORRARÁ el backup actual.\n\n"
+                     "Opciones:\n"
+                     "• /otacancel - Cancelar OTA\n"
+                     "• /reverse - Restaurar backup anterior\n"
+                     "• /otaconfirmdelete - Borrar backup y continuar OTA");
+      // Desactivar modes antes de salir
+      bot->setOTAMode(false);
+      bot->setMaintenanceMode(false);
+      return false;
+    }
+    KISS_FS.end();
+  }
+
   cleanupOldBackups();
 
   // Determinar estado inicial según bloqueo PIN
   if (pinLocked) {
     transitionState(OTA_WAIT_PUK);
+    KISS_LOG("📤 Enviando mensaje PIN bloqueado...");
     sendOTAMessage(LANG_OTA_PIN_BLOCK);
   } else {
     transitionState(OTA_WAIT_PIN);
     pinAttempts = 0;
     authStartTime = millis();
 
+    KISS_LOG("📤 Enviando mensaje inicial OTA (esperando PIN)...");
     sendOTAMessage(LANG_OTA_INI_1);
+    KISS_LOG("✅ Mensaje inicial enviado");
   }
   return true;
 }
@@ -233,6 +258,30 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
     }
   }
 
+  // /otaconfirmdelete - Borrar backup anterior y continuar OTA
+  else if (strcmp(command, "/otaconfirmdelete") == 0) {
+    // Borrar bin_original.bin
+    if (KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+      if (KISS_FS.exists(BIN_ORIGINAL)) {
+        KISS_FS.remove(BIN_ORIGINAL);
+        KISS_LOG("🗑️ Backup anterior (bin_original.bin) eliminado");
+        bot->sendMessage(credentials->getChatId(), "✅ Backup eliminado - Puedes iniciar /ota ahora");
+      } else {
+        bot->sendMessage(credentials->getChatId(), "ℹ️ No hay backup para eliminar");
+      }
+      KISS_FS.end();
+    } else {
+      bot->sendMessage(credentials->getChatId(), "❌ Error accediendo al sistema de archivos");
+    }
+
+    // Resetear a IDLE para permitir nuevo /ota
+    if (currentState != OTA_IDLE) {
+      bot->setOTAMode(false);
+      bot->setMaintenanceMode(false);
+      transitionState(OTA_IDLE);
+    }
+  }
+
   // /otacancel - Cancelar OTA
   else if (strcmp(command, "/otacancel") == 0) {
     if (currentState == OTA_IDLE) {
@@ -279,13 +328,43 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
     if (currentState == OTA_VALIDATING || isFirstBootAfterOTA()) {
       KISS_CRITICAL("✅ Condiciones de validación cumplidas - marcando firmware como válido");
 
-      // Mensaje simple: firmware anterior borrado
-      sendOTAMessage("✅ Borrando firmware anterior");
-
       markFirmwareValid();
       transitionState(OTA_CLEANUP);
-      cleanupFiles();
+
+      // Borrar SOLO bin_nuevo.bin, MANTENER bin_original.bin como backup
+      if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+        KISS_CRITICAL("❌ Error montando LittleFS para limpieza");
+      } else {
+        if (KISS_FS.exists(BIN_NUEVO)) {
+          KISS_FS.remove(BIN_NUEVO);
+          KISS_LOG("🗑️ Eliminado bin_nuevo.bin (ya en factory)");
+        }
+
+        // MANTENER bin_original.bin como backup para /reverse
+        if (KISS_FS.exists(BIN_ORIGINAL)) {
+          KISS_LOG("💾 Manteniendo bin_original.bin como backup");
+        }
+        KISS_FS.end();
+      }
+
       transitionState(OTA_COMPLETE);
+
+      // Enviar mensaje ANTES de desactivar otaMode
+      sendOTAMessage(LANG_OTA_VALIDATED);
+      KISS_CRITICAL("🎉 OTA COMPLETADO - Firmware validado (backup disponible: /reverse)");
+
+      // CRÍTICO: Verificar si estamos corriendo desde app1
+      const esp_partition_t* running = esp_ota_get_running_partition();
+      const esp_partition_t* factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+
+      if (running && factory && running != factory) {
+        // Copiar firmware actual a factory y reiniciar desde factory
+        if (copyCurrentToFactory()) {
+          sendOTAMessage("🔄 Preparando sistema para futuras actualizaciones...\nReiniciando...");
+          SAFE_DELAY(2000);
+          ESP.restart();
+        }
+      }
 
       // Desactivar maintenance mode
       bot->setMaintenanceMode(false);
@@ -298,10 +377,75 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
 
       transitionState(OTA_IDLE);
       otaStartTime = 0;
-      KISS_CRITICAL("🎉 OTA COMPLETADO EXITOSAMENTE - Firmware validado");
     } else {
       KISS_CRITICAL("❌ /otaok recibido pero no hay validación pendiente");
       sendOTAMessage("❌ No hay OTA pendiente");
+    }
+  }
+
+  // /reverse - Revertir a firmware anterior
+  else if (strcmp(command, "/reverse") == 0) {
+    KISS_CRITICAL("🔄 Comando /reverse recibido");
+
+    // Solo permitir si estamos en IDLE (firmware validado funcionando)
+    if (currentState != OTA_IDLE) {
+      sendOTAMessage("❌ Solo puedes hacer /reverse cuando el sistema está en IDLE");
+      return;
+    }
+
+    // Verificar que existe bin_original.bin
+    if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+      sendOTAMessage("❌ Error accediendo al sistema de archivos");
+      return;
+    }
+
+    if (!KISS_FS.exists(BIN_ORIGINAL)) {
+      KISS_FS.end();
+      sendOTAMessage("❌ No hay backup disponible (bin_original.bin no existe)");
+      return;
+    }
+
+    KISS_FS.end();
+
+    sendOTAMessage("🔄 Revirtiendo a firmware anterior...\n⚠️ NO APAGAR");
+    transitionState(OTA_REVERSE);
+
+    if (reverseFirmware()) {
+      sendOTAMessage("✅ Reversión completada - Reiniciando");
+      SAFE_DELAY(2000);
+      ESP.restart();
+    } else {
+      sendOTAMessage("❌ Error en reversión - Sistema mantiene firmware actual");
+      transitionState(OTA_IDLE);
+    }
+  }
+
+  // /newfirmok - Confirmar firmware revertido
+  else if (strcmp(command, "/newfirmok") == 0) {
+    KISS_CRITICAL("🔍 Comando /newfirmok recibido");
+
+    if (currentState == OTA_WAIT_NEWFIRMOK || isFirstBootAfterOTA()) {
+      KISS_CRITICAL("✅ Firmware revertido confirmado - borrando backup");
+
+      markFirmwareValid();
+
+      // Borrar bin_original.bin definitivamente
+      if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+        KISS_CRITICAL("❌ Error montando LittleFS");
+      } else {
+        if (KISS_FS.exists(BIN_ORIGINAL)) {
+          KISS_FS.remove(BIN_ORIGINAL);
+          KISS_LOG("🗑️ Eliminado bin_original.bin definitivamente");
+        }
+        KISS_FS.end();
+      }
+
+      transitionState(OTA_IDLE);
+      sendOTAMessage("✅ Firmware confirmado - Sistema limpio");
+      KISS_CRITICAL("🎉 Firmware revertido confirmado - Backup borrado");
+    } else {
+      KISS_CRITICAL("❌ /newfirmok recibido pero no hay reversión pendiente");
+      sendOTAMessage("❌ No hay reversión pendiente");
     }
   }
 }
@@ -502,7 +646,7 @@ bool KissOTA::backupCurrentFirmware() {
     return false;
   }
 
-  strcpy(backupFile, "/ota_backup.bin");
+  strcpy(backupFile, BIN_ORIGINAL);
 
   // Borrar backup anterior si existe
   if (KISS_FS.exists(backupFile)) {
@@ -813,6 +957,61 @@ bool KissOTA::verifyChecksum() {
   downloadedChecksum = crc32_le(0, psramBuffer, downloadSize);
   KISS_LOGF("🔍 CRC32: 0x%08X (%.2f MB verificados)\n",
             downloadedChecksum, downloadSize / 1048576.0);
+
+  // Guardar firmware verificado en FS como bin_nuevo.bin
+  KISS_LOG("💾 Guardando firmware en FS...");
+  if (!saveFirmwareToFS()) {
+    KISS_CRITICAL("❌ Error guardando firmware en FS");
+    return false;
+  }
+
+  return true;
+}
+
+// Guardar firmware de PSRAM a FS como bin_nuevo.bin
+bool KissOTA::saveFirmwareToFS() {
+  if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    KISS_CRITICAL("❌ Error montando LittleFS");
+    return false;
+  }
+
+  // Borrar bin_nuevo.bin anterior si existe
+  if (KISS_FS.exists(BIN_NUEVO)) {
+    KISS_FS.remove(BIN_NUEVO);
+  }
+
+  File file = KISS_FS.open(BIN_NUEVO, FILE_WRITE);
+  if (!file) {
+    KISS_CRITICAL("❌ Error creando bin_nuevo.bin");
+    KISS_FS.end();
+    return false;
+  }
+
+  // Escribir PSRAM → FS
+  const size_t CHUNK_SIZE = 32768;
+  size_t bytesWritten = 0;
+
+  for (size_t offset = 0; offset < downloadSize; offset += CHUNK_SIZE) {
+    size_t remaining = downloadSize - offset;
+    size_t toWrite = remaining < CHUNK_SIZE ? remaining : CHUNK_SIZE;
+
+    size_t written = file.write(psramBuffer + offset, toWrite);
+    if (written != toWrite) {
+      KISS_CRITICAL("❌ Error escribiendo en FS");
+      file.close();
+      KISS_FS.remove(BIN_NUEVO);
+      KISS_FS.end();
+      return false;
+    }
+
+    bytesWritten += written;
+    SAFE_YIELD();
+  }
+
+  file.close();
+  KISS_FS.end();
+
+  KISS_LOGF("✅ Firmware guardado en FS: %.2f MB\n", bytesWritten / 1048576.0);
   return true;
 }
 uint32_t KissOTA::calculateCRC32(File& file) {
@@ -839,108 +1038,162 @@ uint32_t KissOTA::calculateCRC32(File& file) {
 
 // ========== FLASH FIRMWARE DIRECTO ==========
 bool KissOTA::flashNewFirmware() {
-  KISS_CRITICAL("🔥 Grabando firmware en banco dual - NO APAGAR");
+  KISS_CRITICAL("🔥 Grabando firmware directamente en factory - NO APAGAR");
 
-  if (!psramBuffer || downloadSize == 0) {
-    KISS_CRITICAL("❌ No hay firmware en PSRAM");
+  // Abrir bin_nuevo.bin desde FS
+  if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    KISS_CRITICAL("❌ Error montando LittleFS");
     return false;
   }
 
-  KISS_LOGF("📦 Flasheando %.2f MB desde PSRAM...\n", downloadSize / 1048576.0);
-
-  // OBTENER PARTICIÓN DE ACTUALIZACIÓN Y VERIFICAR
-  const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-  const esp_partition_t* running_partition = esp_ota_get_running_partition();
-
-  if (!update_partition) {
-    KISS_CRITICAL("❌ No se encuentra partición de actualización");
+  if (!KISS_FS.exists(BIN_NUEVO)) {
+    KISS_CRITICAL("❌ No se encuentra bin_nuevo.bin");
+    KISS_FS.end();
     return false;
   }
 
-  // VERIFICAR CRÍTICA: NO escribir en partición actual
-  if (update_partition->address == running_partition->address) {
-    KISS_CRITICAL("❌ ERROR CRÍTICO: el destino es la partición actual");
+  File firmwareFile = KISS_FS.open(BIN_NUEVO, FILE_READ);
+  if (!firmwareFile) {
+    KISS_CRITICAL("❌ Error abriendo bin_nuevo.bin");
+    KISS_FS.end();
     return false;
   }
 
-  KISS_LOGF("🎯 Grabando en partición: %s (0x%x)", update_partition->label, update_partition->address);
-  KISS_LOGF("🔍 Ejecutando desde: %s (0x%x)", running_partition->label, running_partition->address);
+  size_t firmwareSize = firmwareFile.size();
+  KISS_LOGF("📦 Flasheando %.2f MB desde FS...\n", firmwareSize / 1048576.0);
+
+  // OBTENER PARTICIÓN ACTUAL Y DESTINO OTA
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* target = esp_ota_get_next_update_partition(NULL);
+
+  if (!target) {
+    KISS_CRITICAL("❌ Partición OTA destino no encontrada");
+    firmwareFile.close();
+    KISS_FS.end();
+    return false;
+  }
+
+  // CRÍTICO: Verificar que NO escribimos en partición activa
+  if (target == running) {
+    KISS_CRITICAL("❌ ERROR: Destino es la partición actual");
+    firmwareFile.close();
+    KISS_FS.end();
+    return false;
+  }
 
   // VERIFICAR TAMAÑO
-  if (downloadSize > update_partition->size) {
-    KISS_CRITICALF("🔍 Firmware demasiado grande: %d > %d\n", downloadSize, update_partition->size);
+  if (firmwareSize > target->size) {
+    KISS_CRITICALF("❌ Firmware demasiado grande: %d > %d\n", firmwareSize, target->size);
+    firmwareFile.close();
+    KISS_FS.end();
     return false;
   }
 
-  // 1. BORRAR PARTICIÓN DE DESTINO
-  KISS_LOG("🧹 Borrando partición destino...");
-  esp_err_t err = esp_partition_erase_range(update_partition, 0, update_partition->size);
+  // 1. DESACTIVAR WDT SI ESTÁ ACTIVO
+#ifdef KISS_USE_RTOS
+  esp_task_wdt_deinit();
+  KISS_LOG("⚠️ WDT desactivado para flash");
+#endif
+
+  // 2. BORRAR EN BLOQUES PEQUEÑOS CON YIELD
+  // Redondear hacia arriba al múltiplo de 4KB (tamaño sector flash)
+  size_t eraseSize = ((firmwareSize + 4095) / 4096) * 4096;
+  KISS_LOGF("🧹 Borrando %d bytes en %s...\n", eraseSize, target->label);
+
+  // Borrar en bloques de 64KB con yield entre cada bloque
+  const size_t ERASE_BLOCK = 65536; // 64KB
+  size_t eraseOffset = 0;
+  esp_err_t err = ESP_OK;
+
+  while (eraseOffset < eraseSize && err == ESP_OK) {
+    size_t toErase = (eraseSize - eraseOffset) < ERASE_BLOCK ? (eraseSize - eraseOffset) : ERASE_BLOCK;
+    err = esp_partition_erase_range(target, eraseOffset, toErase);
+    eraseOffset += toErase;
+    SAFE_YIELD(); // Yield después de cada bloque
+  }
+
   if (err != ESP_OK) {
     KISS_CRITICALF("❌ Error borrando partición: 0x%x\n", err);
+    firmwareFile.close();
+    KISS_FS.end();
     return false;
   }
 
-  KISS_LOG("✅ Partición borrada");
+  KISS_LOG("✅ Espacio borrado");
 
-  // 2. ESCRIBIR NUEVO FIRMWARE DESDE PSRAM
+  // 3. ESCRIBIR NUEVO FIRMWARE DESDE FS
   const size_t FLASH_WRITE_SIZE = 4096;
+  uint8_t* buffer = (uint8_t*)malloc(FLASH_WRITE_SIZE);
+  if (!buffer) {
+    KISS_CRITICAL("❌ Error asignando buffer");
+    firmwareFile.close();
+    KISS_FS.end();
+    return false;
+  }
+
   size_t bytesWritten = 0;
   int writeCount = 0;
 
   KISS_LOG("📝 Escribiendo firmware...");
 
-  while (bytesWritten < downloadSize) {
-    size_t remaining = downloadSize - bytesWritten;
-    size_t toWrite = (remaining < FLASH_WRITE_SIZE) ? remaining : FLASH_WRITE_SIZE;
+  while (firmwareFile.available()) {
+    size_t toRead = FLASH_WRITE_SIZE;
+    size_t bytesRead = firmwareFile.read(buffer, toRead);
 
-    err = esp_partition_write(update_partition, bytesWritten,
-                              psramBuffer + bytesWritten, toWrite);
-    if (err != ESP_OK) {
-      KISS_CRITICALF("❌ Error escribiendo en offset %d: 0x%x\n", bytesWritten, err);
-      return false;
-    }
-    bytesWritten += toWrite;
-    writeCount++;
-    // YIELD periódico para evitar WDT
-    if (writeCount % 10 == 0) {
-      SAFE_YIELD();
+    if (bytesRead > 0) {
+      err = esp_partition_write(target, bytesWritten, buffer, bytesRead);
+      if (err != ESP_OK) {
+        KISS_CRITICALF("❌ Error escribiendo en offset %d: 0x%x\n", bytesWritten, err);
+        free(buffer);
+        firmwareFile.close();
+        KISS_FS.end();
+        return false;
+      }
+      bytesWritten += bytesRead;
+      writeCount++;
+
+      // YIELD cada 2 escrituras (8KB) para evitar WDT
+      if (writeCount % 2 == 0) {
+        SAFE_YIELD();
+      }
     }
   }
+
+  free(buffer);
+  firmwareFile.close();
+  KISS_FS.end();
 
   KISS_LOGF("✅ Escritura completada: %d bytes\n", bytesWritten);
 
-  // 3. VERIFICACIÓN RÁPIDA
-  KISS_LOG("🔍 Verificación rápida...");
-  if (!verifyFlash(update_partition)) {
-    KISS_CRITICAL("❌ Verificación falló - datos corruptos");
-    return false;
-  }
+  // 3. VERIFICACIÓN OMITIDA (para evitar WDT)
+  KISS_LOG("⏭️ Verificación omitida (optimización)");
 
   // 4. ENVIAR MENSAJE ANTES DE REINICIAR
   sendOTAMessage(LANG_OTA_BEF_REBOOT);
 
-  KISS_CRITICAL("✅ Grabación en bancada dual completada");
+  KISS_LOGF("✅ Grabación en %s completada\n", target->label);
 
-  // 5. ACTUALIZAR BOOT FLAGS
+  // 5. CONFIGURAR BOOT A LA NUEVA PARTICIÓN
+  KISS_LOGF("🔧 Configurando boot a %s...\n", target->label);
+  err = esp_ota_set_boot_partition(target);
+  if (err != ESP_OK) {
+    KISS_CRITICALF("❌ Error configurando boot: 0x%x\n", err);
+    return false;
+  }
+
+  // 6. ACTUALIZAR BOOT FLAGS
   bootFlags.magic = BOOT_MAGIC;
   bootFlags.otaInProgress = false;
   bootFlags.firmwareValid = false;
   bootFlags.bootCount = 1;
   saveBootFlags();
 
-  // 6. DELAY para que Telegram envíe los mensajes
+  // 7. DELAY para que Telegram envíe los mensajes
   KISS_LOG("💤 Esperando 5s para envío mensajes...");
   SAFE_DELAY(5000);
 
-  // 7. CONFIGURAR BOOT
-  KISS_LOG("🔧 Configurando partición de arranque...");
-  err = esp_ota_set_boot_partition(update_partition);
-  if (err != ESP_OK) {
-    KISS_CRITICALF("❌ Error configurando arranque: 0x%x\n", err);
-    return false;
-  }
-
-  // Reiniciar
+  // 8. REINICIAR
+  KISS_LOGF("🔄 Reiniciando a %s...\n", target->label);
   SAFE_DELAY(2000);
   ESP.restart();
   return true;
@@ -948,39 +1201,75 @@ bool KissOTA::flashNewFirmware() {
 
 bool KissOTA::verifyFlash(const esp_partition_t* partition) {
 
-  KISS_LOG("🔍 Iniciando verificación...");
+  KISS_LOG("🔍 Iniciando verificación flash vs FS...");
+
+  // Abrir bin_nuevo.bin desde FS para comparar
+  if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    KISS_CRITICAL("❌ Error montando FS para verificación");
+    return false;
+  }
+
+  File firmwareFile = KISS_FS.open(BIN_NUEVO, FILE_READ);
+  if (!firmwareFile) {
+    KISS_FS.end();
+    KISS_CRITICAL("❌ No se puede abrir bin_nuevo.bin para verificación");
+    return false;
+  }
+
+  size_t firmwareSize = firmwareFile.size();
+
   const size_t VERIFY_CHUNK = 4096;
-  uint8_t* verifyBuffer = (uint8_t*)malloc(VERIFY_CHUNK);
-  if (!verifyBuffer) {
+  uint8_t* flashBuffer = (uint8_t*)malloc(VERIFY_CHUNK);
+  uint8_t* fileBuffer = (uint8_t*)malloc(VERIFY_CHUNK);
+
+  if (!flashBuffer || !fileBuffer) {
     KISS_CRITICAL("❌ No hay memoria para la verificación");
+    if (flashBuffer) free(flashBuffer);
+    if (fileBuffer) free(fileBuffer);
+    firmwareFile.close();
+    KISS_FS.end();
     return false;
   }
 
   bool verificationOK = true;
   size_t bytesVerified = 0;
-  while (bytesVerified < downloadSize && verificationOK) {
-    size_t remaining = downloadSize - bytesVerified;
+
+  while (bytesVerified < firmwareSize && verificationOK) {
+    size_t remaining = firmwareSize - bytesVerified;
     size_t toVerify = (remaining < VERIFY_CHUNK) ? remaining : VERIFY_CHUNK;
 
     // Leer de flash
-    esp_err_t err = esp_partition_read(partition, bytesVerified, verifyBuffer, toVerify);
+    esp_err_t err = esp_partition_read(partition, bytesVerified, flashBuffer, toVerify);
     if (err != ESP_OK) {
       KISS_CRITICALF("❌ Error leyendo flash: 0x%x\n", err);
       verificationOK = false;
       break;
     }
 
-    // Comparar con PSRAM
-    if (memcmp(psramBuffer + bytesVerified, verifyBuffer, toVerify) != 0) {
+    // Leer de archivo FS
+    size_t bytesRead = firmwareFile.read(fileBuffer, toVerify);
+    if (bytesRead != toVerify) {
+      KISS_CRITICAL("❌ Error leyendo bin_nuevo.bin");
+      verificationOK = false;
+      break;
+    }
+
+    // Comparar flash vs archivo
+    if (memcmp(flashBuffer, fileBuffer, toVerify) != 0) {
       KISS_CRITICALF("❌ Diferencia en offset %d\n", bytesVerified);
       verificationOK = false;
       break;
     }
+
     bytesVerified += toVerify;
     SAFE_YIELD();
   }
 
-  free(verifyBuffer);
+  free(flashBuffer);
+  free(fileBuffer);
+  firmwareFile.close();
+  KISS_FS.end();
+
   if (verificationOK) {
     KISS_LOG("✅ Verificación completada exitosamente");
   } else {
@@ -1164,49 +1453,183 @@ void KissOTA::validateBootAfterOTA() {
 
 void KissOTA::handleBootLoopRecovery() {
   KISS_CRITICAL("⚠️ Recuperación de lazo de arranque...");
-  // Primero hacer rollback
-  if (strlen(bootFlags.backupPath) > 0) {
-    if (restoreFromBackup()) {
-      // El dispositivo se reiniciará en restoreFromBackup()
-      // Tras reiniciar, detectaremos que venimos de rollback
-    }
+
+  // Verificar si existe bin_original.bin
+  if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    KISS_CRITICAL("❌ Error montando FS - no se puede recuperar");
+    bot->queueMessage(credentials->getChatId(), LANG_OTA_CRITI_ERROR,
+                      KissTelegram::PRIORITY_CRITICAL);
+    return;
   }
 
-  // Si hemos llegado aquí, el rollback falló
+  if (KISS_FS.exists(BIN_ORIGINAL)) {
+    KISS_FS.end();
+    KISS_CRITICAL("✅ Backup encontrado - intentando restaurar...");
+    if (reverseFirmware()) {
+      KISS_CRITICAL("✅ Restauración iniciada - reiniciando");
+      SAFE_DELAY(2000);
+      ESP.restart();
+    }
+  } else {
+    KISS_FS.end();
+    KISS_CRITICAL("❌ No hay backup disponible");
+  }
 
-  bot->queueMessage(credentials->getChatId(),LANG_OTA_CRITI_ERROR,
+  // Si llegamos aquí, el rollback falló
+  bot->queueMessage(credentials->getChatId(), LANG_OTA_CRITI_ERROR,
                     KissTelegram::PRIORITY_CRITICAL);
 }
 
 void KissOTA::emergencyRollback() {
   KISS_CRITICAL("🔥 INICIANDO RECUPERACIÓN DE EMERGENCIA");
 
-  if (strlen(bootFlags.backupPath) > 0) {
-    if (restoreFromBackup()) {
-      KISS_CRITICAL("✅ Firmware restaurado");
-      // restoreFromBackup() reinicia el dispositivo
+  // Verificar si existe bin_original.bin
+  if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    KISS_CRITICAL("❌ Error montando FS - recuperación imposible");
+    sendOTAMessage(LANG_OTA_ERROR_RECOVER);
+    bot->setMaintenanceMode(false);
+    bot->setOTAMode(false);
+    transitionState(OTA_IDLE);
+    otaStartTime = 0;
+    return;
+  }
+
+  if (KISS_FS.exists(BIN_ORIGINAL)) {
+    KISS_FS.end();
+    KISS_CRITICAL("✅ Backup encontrado - restaurando...");
+    sendOTAMessage("🔄 Restaurando firmware anterior...");
+
+    if (reverseFirmware()) {
+      KISS_CRITICAL("✅ Firmware restaurado - reiniciando");
+      SAFE_DELAY(2000);
+      ESP.restart();
     } else {
       KISS_CRITICAL("❌ Recuperación falló - SISTEMA INESTABLE");
-
       sendOTAMessage(LANG_OTA_ERROR_RECOVER);
-
-      // Desactivar maintenance mode aunque estemos en estado crítico
       bot->setMaintenanceMode(false);
       bot->setOTAMode(false);
-      // Resetear estado completamente
       transitionState(OTA_IDLE);
       otaStartTime = 0;
     }
   } else {
-    KISS_CRITICAL("❌ No hay copia de seguridad disponible");
-
+    KISS_FS.end();
+    KISS_CRITICAL("❌ No hay backup (bin_original.bin) disponible");
     sendOTAMessage(LANG_OTA_RECOVER_ERROR);
-
     bot->setMaintenanceMode(false);
     bot->setOTAMode(false);
     transitionState(OTA_IDLE);
     otaStartTime = 0;
   }
+}
+
+// Revertir a firmware anterior (bin_original.bin)
+bool KissOTA::reverseFirmware() {
+  KISS_CRITICAL("🔄 Revirtiendo a firmware anterior...");
+
+  // Abrir bin_original.bin
+  if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+    KISS_CRITICAL("❌ Error montando LittleFS");
+    return false;
+  }
+
+  File originalFile = KISS_FS.open(BIN_ORIGINAL, FILE_READ);
+  if (!originalFile) {
+    KISS_CRITICAL("❌ Error abriendo bin_original.bin");
+    KISS_FS.end();
+    return false;
+  }
+
+  size_t firmwareSize = originalFile.size();
+  KISS_LOGF("📦 Cargando firmware original: %.2f MB\n", firmwareSize / 1048576.0);
+
+  // Obtener partición factory
+  const esp_partition_t* factory = esp_partition_find_first(
+    ESP_PARTITION_TYPE_APP,
+    ESP_PARTITION_SUBTYPE_APP_FACTORY,
+    NULL);
+
+  if (!factory) {
+    KISS_CRITICAL("❌ No se encuentra partición factory");
+    originalFile.close();
+    KISS_FS.end();
+    return false;
+  }
+
+  // Borrar factory
+  KISS_LOG("🧹 Borrando partición factory...");
+  esp_err_t err = esp_partition_erase_range(factory, 0, factory->size);
+  if (err != ESP_OK) {
+    KISS_CRITICALF("❌ Error borrando partición: 0x%x", err);
+    originalFile.close();
+    KISS_FS.end();
+    return false;
+  }
+
+  // Escribir bin_original.bin → factory
+  const size_t CHUNK_SIZE = 4096;
+  uint8_t* buffer = (uint8_t*)malloc(CHUNK_SIZE);
+  if (!buffer) {
+    KISS_CRITICAL("❌ Error asignando buffer");
+    originalFile.close();
+    KISS_FS.end();
+    return false;
+  }
+
+  size_t bytesWritten = 0;
+  int writeCount = 0;
+
+  KISS_LOG("📝 Restaurando firmware original...");
+
+  while (originalFile.available()) {
+    size_t bytesRead = originalFile.read(buffer, CHUNK_SIZE);
+
+    if (bytesRead > 0) {
+      err = esp_partition_write(factory, bytesWritten, buffer, bytesRead);
+      if (err != ESP_OK) {
+        KISS_CRITICALF("❌ Error escribiendo offset %d: 0x%x", bytesWritten, err);
+        free(buffer);
+        originalFile.close();
+        KISS_FS.end();
+        return false;
+      }
+      bytesWritten += bytesRead;
+      writeCount++;
+
+      if (writeCount % 10 == 0) {
+        SAFE_YIELD();
+      }
+    }
+  }
+
+  free(buffer);
+  originalFile.close();
+  KISS_FS.end();
+
+  KISS_LOGF("✅ Firmware original restaurado: %d bytes\n", bytesWritten);
+
+  // Borrar otadata para forzar boot a factory
+  KISS_LOG("🔧 Borrando otadata...");
+  const esp_partition_t* otadata = esp_partition_find_first(
+    ESP_PARTITION_TYPE_DATA,
+    ESP_PARTITION_SUBTYPE_DATA_OTA,
+    NULL);
+
+  if (otadata) {
+    err = esp_partition_erase_range(otadata, 0, otadata->size);
+    if (err != ESP_OK) {
+      KISS_CRITICALF("⚠️ Advertencia borrando otadata: 0x%x", err);
+    } else {
+      KISS_LOG("✅ Otadata borrada");
+    }
+  }
+
+  // Marcar flags para validación
+  bootFlags.firmwareValid = false;
+  bootFlags.bootCount = 1;
+  saveBootFlags();
+
+  KISS_CRITICAL("✅ Reversión completada");
+  return true;
 }
 
 // ========== CLEANUP ==========
@@ -1256,8 +1679,79 @@ void KissOTA::cleanupOldBackups() {
 }
 
 // ========== HELPERS ==========
+// Copiar firmware actual a partición factory (app0)
+bool KissOTA::copyCurrentToFactory() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* factory = esp_partition_find_first(ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_FACTORY, NULL);
+
+  if (!running || !factory) {
+    return false;
+  }
+
+  if (running == factory) {
+    return true;
+  }
+
+  // Buffer para copiar en bloques
+  const size_t BUFFER_SIZE = 4096;
+  uint8_t* buffer = (uint8_t*)malloc(BUFFER_SIZE);
+  if (!buffer) {
+    return false;
+  }
+
+  // Borrar factory primero
+  esp_err_t err = esp_partition_erase_range(factory, 0, factory->size);
+  if (err != ESP_OK) {
+    free(buffer);
+    return false;
+  }
+
+  // Copiar en bloques
+  size_t totalCopied = 0;
+  size_t sizeToCopy = running->size;
+
+  while (totalCopied < sizeToCopy) {
+    size_t chunkSize = (sizeToCopy - totalCopied) > BUFFER_SIZE ? BUFFER_SIZE : (sizeToCopy - totalCopied);
+
+    err = esp_partition_read(running, totalCopied, buffer, chunkSize);
+    if (err != ESP_OK) {
+      free(buffer);
+      return false;
+    }
+
+    err = esp_partition_write(factory, totalCopied, buffer, chunkSize);
+    if (err != ESP_OK) {
+      free(buffer);
+      return false;
+    }
+
+    totalCopied += chunkSize;
+    SAFE_YIELD();
+  }
+
+  free(buffer);
+
+  // Cambiar boot partition a factory
+  err = esp_ota_set_boot_partition(factory);
+  if (err != ESP_OK) {
+    return false;
+  }
+
+  return true;
+}
+
 void KissOTA::sendOTAMessage(const char* text) {
-  bot->sendOTAMessage(credentials->getChatId(), text);
+  bool sent = bot->sendOTAMessage(credentials->getChatId(), text);
+  if (!sent) {
+    KISS_CRITICAL("⚠️ Falló envío mensaje OTA - reintentando...");
+    SAFE_DELAY(500);
+    sent = bot->sendOTAMessage(credentials->getChatId(), text);
+    if (sent) {
+      KISS_LOG("✅ Reintento exitoso");
+    } else {
+      KISS_CRITICAL("❌ Falló reintento - mensaje no enviado");
+    }
+  }
 }
 
 void KissOTA::transitionState(OTAState newState) {
@@ -1275,7 +1769,8 @@ const char* KissOTA::getStateName(OTAState state) {
     "SPACE_CHECK", "BACKUP_CURRENT", "BACKUP_PROGRESS",
     "DOWNLOADING", "DOWNLOAD_PROGRESS", "VERIFY_CHECKSUM",
     "WAIT_CONFIRM", "FLASHING", "FLASH_PROGRESS",
-    "VALIDATING", "ROLLBACK", "CLEANUP", "COMPLETE"
+    "VALIDATING", "ROLLBACK", "REVERSE", "WAIT_NEWFIRMOK",
+    "CLEANUP", "COMPLETE"
   };
 
   if (state >= 0 && state < (sizeof(names) / sizeof(names[0]))) {

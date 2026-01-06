@@ -179,7 +179,6 @@ void KissSSL::printInfo() {
   KISS_LOGF("   Modo SSL: %s", secureMode ? "SECURED (validación ON)" : "INSECURE (validación OFF)");
   KISS_LOGF("   Time synced: %s", KissTime::getInstance().isTimeSynced() ? "SI" : "NO");
   KISS_LOGF("   Señal WiFi: %d dBm", getSignalStrength());
-  KISS_LOGF("   Consumo estimado: %d mA", getCurrentConsumption());
   KISS_LOGF("   Edad conexión: %lu s", getConnectionAge() / 1000);
 }
 
@@ -214,29 +213,6 @@ bool KissSSL::setPowerMode(KissClientPowerMode mode) {
 
 KissClientPowerMode KissSSL::getPowerMode() {
   return _powerMode;
-}
-
-int KissSSL::getCurrentConsumption() {
-  // Estimación de consumo WiFi en mA
-  if (!WiFi.isConnected()) return 0;
-
-  switch (_powerMode) {
-    case CLIENT_POWER_LOW:
-    case CLIENT_POWER_IDLE:
-      return 20;  // WiFi sleep activo
-
-    case CLIENT_POWER_ACTIVE:
-      return 80;  // WiFi activo normal
-
-    case CLIENT_POWER_TURBO:
-      return 120; // WiFi máximo rendimiento
-
-    case CLIENT_POWER_MAINTENANCE:
-      return 15;  // Mínimo
-
-    default:
-      return 40;  // Boot/transición
-  }
 }
 
 // ========== INFORMACIÓN ==========

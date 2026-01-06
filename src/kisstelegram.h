@@ -7,11 +7,7 @@
 #include "Kiss_setup.h"
 #include "KissTime.h"
 #include "KissClient.h"
-#include "KissSSL.h"
-#if KISS_LTE_ENABLED
-#include "KissLTE.h"
-#endif
-#include <WiFi.h>
+#include "KissNet.h"  // Gestor único de conectividad
 
 
 #if defined(ESP_PLATFORM) || defined(ARDUINO_ARCH_ESP32)
@@ -90,20 +86,8 @@ public:
   void setMinMessageInterval(int milliseconds);
   int getMinMessageInterval();
 
-  void setMaxMessageSize(int size);
-  int getMaxMessageSize();
-
   void setMaxRetryAttempts(int attempts);
   int getMaxRetryAttempts();
-
-  void setRetryBackoff(int baseMs, int maxMs = 0);
-  int getRetryBackoffBase();
-  int getRetryBackoffMax();
-
-  // ========== POLLING ADAPTATIVO ==========
-  void setPollingTimeout(int seconds);
-  int getPollingTimeout();
-  void setAdaptivePolling(bool enable);
 
   // ========== CONFIGURACIÓN STORAGE ==========
   void enableStorage(bool enable = true);
@@ -114,18 +98,9 @@ public:
   void setAutoSaveInterval(unsigned long intervalMs);
   unsigned long getAutoSaveInterval();
 
-  void setStorageCompression(bool enable);
-  bool getStorageCompression();
-
   // ========== CONFIGURACIÓN AVANZADA ==========
   void setOperationMode(OperationMode mode);
   OperationMode getOperationMode();
-
-  void setConnectionTimeout(int timeoutMs);
-  int getConnectionTimeout();
-
-  void setWifiStabilityThreshold(int minUptimeMs);
-  int getWifiStabilityThreshold();
 
   void setDiagnosticsVerbose(bool verbose);
   bool getDiagnosticsVerbose();
@@ -203,6 +178,14 @@ public:
 
   String getVersion();
 
+  // ========== GESTIÓN DE RED ==========
+  String getNetworkInfo();          // Info actual de red (WiFi/LTE + señal)
+  String getNetworkMode();          // Modo actual (AUTO/WIFI/LTE)
+  bool setNetworkMode(const char* mode);  // Cambiar modo: "auto", "wifi", "lte"
+  bool switchToLTE();               // Forzar cambio a LTE
+  bool switchToWiFi();              // Forzar cambio a WiFi
+  bool switchToAuto();              // Volver a modo automático
+
   // ========== MANTENIMIENTO ==========
   void cleanupStorage();
   void resetCounters();
@@ -226,7 +209,6 @@ public:
 
   // ========== MÉTODOS SSL MEJORADOS ==========
   bool testSSLConnection();
-  String getSSLInfo();
   bool hasTimePassed(unsigned long startTime, unsigned long interval);
   bool pingTelegram();
   unsigned long lastPingTime = 0;
@@ -241,8 +223,7 @@ public:
 
 private:
   // ========== VARIABLES CONEXIÓN ==========
-  KissClient* networkClient;  // Polimórfico: puede ser KissSSL o KissLTE
-  bool usingLTE;  // Flag para saber qué cliente está activo
+  KissNet* kissNet;  // Gestor de conectividad WiFi/LTE
   char botToken[64];
   bool enabled;
   unsigned long wifiStableTime;
@@ -255,8 +236,6 @@ private:
   unsigned long lastMessageTime;
   int minMessageInterval;
   int maxRetryAttempts;
-  int baseBackoffMs;
-  int maxBackoffMs;
 
   static const int JSON_BUFFER_SIZE = 6144;  // 8192 → 6KB (suficiente para updates)
   static const int MESSAGE_BUFFER_SIZE = 1024; // 2048 → 1KB (ahorra 1KB)
@@ -267,7 +246,6 @@ private:
   char* messageBuffer;
   char* commandBuffer;
   char* paramBuffer;
-  int maxMessageSize;
 
   // ========== VARIABLES POLLING ADAPTATIVO ==========
   int pollingTimeout;
@@ -279,11 +257,9 @@ private:
   int maxQueueStorage;
   unsigned long lastSaveTime;
   unsigned long autoSaveInterval;
-  bool storageCompression;
 
   // ========== VARIABLES OPERACIÓN ==========
   OperationMode operationMode;
-  int connectionTimeout;
   int wifiStabilityThreshold;
   bool diagnosticsVerbose;
   unsigned long startTime;
@@ -382,16 +358,15 @@ private:
   // ========== MÉTODOS STORAGE ==========
   bool shouldSave();
 
-  // ========== MÉTODOS NETWORK CLIENT ==========
-  bool initializeNetworkClient();  // Inicializar WiFi o LTE según config
-  bool tryFallbackToLTE();  // Intentar failover a LTE si WiFi falla
-  bool isLTEAvailable();  // Verificar si LTE está configurado
+  // ========== MÉTODOS COMANDOS INTERNOS ==========
+  bool handleLTECommand();  // Procesar comando /lte
 
   // HELPER
   void printNumber(long value) {
     char buffer[20];
     snprintf(buffer, sizeof(buffer), "%ld", value);
-    networkClient->print(buffer);
+    KissClient* client = kissNet->getActiveClient();
+    if (client) client->print(buffer);
   }
 };
 

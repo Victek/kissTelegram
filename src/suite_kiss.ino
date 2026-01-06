@@ -1,7 +1,7 @@
 //suite_kiss.ino
 // Vicente Soriano - victek@gmail.com
 // Some demos for KissTelegram
-// Build: 2025-12-21
+// Build: 05/01/2026
 
 // ==========================================================================
 // LANGUAGE SELECTION FOR TELEGRAM messages, see lang.h
@@ -118,9 +118,6 @@ void setup() {
   #endif
 
   lte.setAPN(KISS_LTE_APN, KISS_LTE_USER, KISS_LTE_PASS);
-  if (strlen(KISS_LTE_PIN) > 0) {
-    lte.setPIN(KISS_LTE_PIN);
-  }
   Serial.println("✅ LTE preparado (standby)\n");
 #endif
 
@@ -155,15 +152,13 @@ void setup() {
   if (!wifiConnected) {
     Serial.println("📡 Activando fallback LTE...");
 
-    if (lte.powerOn() && lte.connect()) {
-      Serial.println("✅ LTE conectado");
-      lte.printModuleInfo();
+    if (lte.powerOn()) {
+      Serial.println("✅ LTE encendido");
       currentConnection = CONN_LTE;
       stats.lteActivations++;
 
-      // IMPORTANTE: Indicar al bot que use LTE
-      Serial.println("🔧 Configurando bot para usar LTE...");
-      // El bot automáticamente detectará LTE en initializeNetworkClient()
+      // IMPORTANTE: KissNet maneja la conexión automáticamente
+      Serial.println("🔧 LTE listo - KissNet gestionará la conexión");
     } else {
       Serial.println("❌ Error: sin conexión disponible");
       currentConnection = CONN_NONE;
@@ -177,7 +172,7 @@ void setup() {
   }
 #endif
 
-  // INICIALIZAR KISSTIME PRIMERO (necesario para SSL en OTA)
+  // INICIALIZAR KISSTIME PRIMERO (necesario para SSL)
   Serial.println("⏰ Sincronizando reloj NTP...");
   bool ntpSynced = KissTime::getInstance().begin();
   if (ntpSynced) {
@@ -197,6 +192,12 @@ void setup() {
   if (bot->restoreFromStorage()) {
     int restored = bot->getMessagesInFS();
     Serial.printf("✅ %d mensajes restaurados desde LittleFS\n", restored);
+
+    // Activar turbo mode automáticamente si hay muchos mensajes pendientes
+    if (restored > 10) {
+      Serial.println("🚀 Activando TURBO MODE automático (>10 mensajes pendientes)");
+      bot->enableTurboMode();
+    }
   } else {
     Serial.println("ℹ️ Sin mensajes pendientes - sistema fresco");
   }
@@ -281,7 +282,7 @@ void testPrioridades() {
            "🧪 INICIANDO TEST PRIORIDADES\n\n"
            "📊 Estadísticas:\n"
            " - Desde FS: %d\n"
-           " - Modo energía: %d â†’ %d\n"
+           " - Modo energía, de: %d a %d\n"
            " - CRITICOS: 5 a enviar\n"
            " - NORMALES: 1 a enviar\n"
            " - BAJA PRIORIDAD: 6 a enviar\n\n"
@@ -349,7 +350,7 @@ void handleMessage(const char* chat_id, const char* text,
              "/config - Config a monitor serie\n"
              "/estado - Estado sistema + LittleFS\n"
              "/stats - Estadísticas acumuladas\n"
-             "/lte - Stats LTE (solo en LTE)\n"
+             "/lte - Gestión de red WiFi/LTE\n"
              "/debug - Info detallada\n"
              "/debugfs - Debug del FS\n"
              "/memoria - Info memoria\n"
@@ -361,8 +362,7 @@ void handleMessage(const char* chat_id, const char* text,
              "/prioridades - Test sorting\n"
              "/testlittlefs - Test persistencia\n\n"
              "🔒 SSL:\n"
-             "/testssl - Probar conexion SSL\n"
-             "/sslinfo - Info SSL actual\n\n"
+             "/testssl - Probar conexion SSL\n\n"
              "⏰ Tiempo:\n"
              "/time - Hora actual\n"
              "/timestatus - Estado reloj\n"
@@ -381,7 +381,9 @@ void handleMessage(const char* chat_id, const char* text,
              "/otapuk <code>\n"
              "/otaconfirm\n"
              "/otaok\n"
-             "/otacancel\n\n"
+             "/otacancel\n"
+             "/otaconfirmdelete\n"
+             "/reverse\n\n"
 #endif
              "/help - Esta ayuda",
              KISS_GET_VERSION());
@@ -500,25 +502,14 @@ void handleMessage(const char* chat_id, const char* text,
 
     // ✅ Añadir estadísticas LTE si se está usando LTE
 #ifdef KISS_HAS_LTE
-    if (currentConnection == CONN_LTE && bot->isUsingLTE()) {
-      unsigned long sleepTime = lte.getTimeInSleepMode();
-      unsigned long activeTime = lte.getTimeInActiveMode();
-      float efficiency = lte.getSleepEfficiency();
-
-      // Convertir milisegundos a formato legible
-      unsigned long sleepMin = sleepTime / 60000;
-      unsigned long sleepSec = (sleepTime % 60000) / 1000;
-      unsigned long activeMin = activeTime / 60000;
-      unsigned long activeSec = (activeTime % 60000) / 1000;
-
+    if (currentConnection == CONN_LTE) {
+      int32_t lteRssi = lte.getSignalStrength();
       offset += snprintf(status + offset, sizeof(status) - offset,
-                        "\n\n⚡ ESTADÍSTICAS LTE\n"
-                        "😴 Sleep: %lum %lus\n"
-                        "🔋 Activo: %lum %lus\n"
-                        "📊 Eficiencia: %.1f%%",
-                        sleepMin, sleepSec,
-                        activeMin, activeSec,
-                        efficiency);
+                        "\n\n📡 MÓDULO LTE\n"
+                        "📶 Señal: %d dBm\n"
+                        "🔌 Modo: %s",
+                        lteRssi,
+                        lte.isConnected() ? "Conectado" : "Standby");
     }
 #endif
 
@@ -745,60 +736,43 @@ void handleMessage(const char* chat_id, const char* text,
 
 #ifdef KISS_HAS_LTE
   } else if (strcmp(command, "/lte") == 0) {
-    // Comando solo disponible si se está usando LTE
-    if (currentConnection != CONN_LTE || !bot->isUsingLTE()) {
-      bot->sendMessage(chat_id, "⚠️ Comando solo disponible en modo LTE");
-      return;
-    }
+    // Obtener información de red desde KissTelegram
+    String networkInfo = bot->getNetworkInfo();
+    String networkMode = bot->getNetworkMode();
 
-    unsigned long sleepTime = lte.getTimeInSleepMode();
-    unsigned long activeTime = lte.getTimeInActiveMode();
-    unsigned long currentModeTime = lte.getCurrentModeTime();
-    float efficiency = lte.getSleepEfficiency();
-
-    // Convertir a horas/minutos/segundos
-    unsigned long sleepH = sleepTime / 3600000;
-    unsigned long sleepM = (sleepTime % 3600000) / 60000;
-    unsigned long sleepS = (sleepTime % 60000) / 1000;
-
-    unsigned long activeH = activeTime / 3600000;
-    unsigned long activeM = (activeTime % 3600000) / 60000;
-    unsigned long activeS = (activeTime % 60000) / 1000;
-
-    unsigned long currentM = currentModeTime / 60000;
-    unsigned long currentS = (currentModeTime % 60000) / 1000;
-
-    // Calcular consumo estimado promedio
-    int currentConsumption = lte.getCurrentConsumption();
-    float avgConsumption = (sleepTime * 7.0 + activeTime * 100.0) / (sleepTime + activeTime);
-
-    const char* currentModeStr = lte.getPowerMode() == CLIENT_POWER_LOW ? "SLEEP" :
-                                 lte.getPowerMode() == CLIENT_POWER_IDLE ? "IDLE" :
-                                 lte.getPowerMode() == CLIENT_POWER_MAINTENANCE ? "MAINT" :
-                                 "ACTIVO";
-
-    char lteMsg[600];
+    char lteMsg[800];
     snprintf(lteMsg, sizeof(lteMsg),
-             "📡 ESTADÍSTICAS LTE DETALLADAS\n\n"
-             "⚡ CONSUMO\n"
-             "🔌 Actual: %d mA (%s)\n"
-             "📊 Promedio: %.1f mA\n\n"
-             "⏱️ TIEMPOS\n"
-             "😴 Sleep: %luh %lum %lus\n"
-             "🔋 Activo: %luh %lum %lus\n"
-             "📈 Eficiencia: %.1f%%\n\n"
-             "🔄 MODO ACTUAL\n"
-             "⚙️ %s (hace %lum %lus)\n\n"
-             "💡 TIP: En SLEEP el consumo\n"
-             "es 3-7 mA vs 100 mA activo",
-             currentConsumption, currentModeStr,
-             avgConsumption,
-             sleepH, sleepM, sleepS,
-             activeH, activeM, activeS,
-             efficiency,
-             currentModeStr, currentM, currentS);
+             "📡 GESTIÓN DE RED\n\n"
+             "🌐 Red actual:\n%s\n\n"
+             "⚙️ Modo de red:\n%s\n\n"
+             "🔄 Comandos disponibles:\n"
+             "/ltewifi - Forzar WiFi\n"
+             "/ltelte - Forzar LTE\n"
+             "/lteauto - Modo automático\n\n"
+             "💡 El modo se guarda en NVS\n"
+             "y persiste tras reiniciar",
+             networkInfo.c_str(),
+             networkMode.c_str());
 
     bot->sendMessage(chat_id, lteMsg);
+  } else if (strcmp(command, "/ltewifi") == 0) {
+    if (bot->switchToWiFi()) {
+      bot->sendMessage(chat_id, "✅ Cambiando a WiFi...\n🔄 Reconectando");
+    } else {
+      bot->sendMessage(chat_id, "❌ Error cambiando a WiFi");
+    }
+  } else if (strcmp(command, "/ltelte") == 0) {
+    if (bot->switchToLTE()) {
+      bot->sendMessage(chat_id, "✅ Cambiando a LTE...\n🔄 Reconectando");
+    } else {
+      bot->sendMessage(chat_id, "❌ Error cambiando a LTE");
+    }
+  } else if (strcmp(command, "/lteauto") == 0) {
+    if (bot->switchToAuto()) {
+      bot->sendMessage(chat_id, "✅ Modo automático\n📡 WiFi → LTE fallback");
+    } else {
+      bot->sendMessage(chat_id, "❌ Error cambiando a modo auto");
+    }
 #endif
 
   } else if (strcmp(command, "/time") == 0) {
@@ -859,19 +833,12 @@ void handleMessage(const char* chat_id, const char* text,
   } else if (strcmp(command, "/testssl") == 0) {
     Serial.println("\n🔒 SOLICITUD PRUEBA SSL...");
     bool sslResult = bot->testSSLConnection();
-    String sslInfo = bot->getSSLInfo();
-
-    Serial.println(sslInfo);
 
     if (sslResult) {
       bot->sendMessage(chat_id, "✅ PRUEBA SSL EXITOSA\n\nVer monitor serie para detalles");
     } else {
       bot->sendMessage(chat_id, "❌ PRUEBA SSL FALLIDA\n\nVer monitor serie para errores");
     }
-  } else if (strcmp(command, "/sslinfo") == 0) {
-    String sslInfo = bot->getSSLInfo();
-    // Convertir String a const char* para enviar
-    bot->sendMessage(chat_id, sslInfo.c_str());
   } else if (strcmp(command, "/parar") == 0) {
     config.setAutoMessagesEnabled(false);
     bot->sendMessage(chat_id, "🚫 Mensajes automáticos desactivados por comando");
@@ -937,7 +904,7 @@ void handleMessage(const char* chat_id, const char* text,
     bot->sendMessage(chat_id, "✅ Comando recibido");
     Serial.println("🔄 Procesando /otaok - validación de firmware");
     ota->handleOTACommand(command, param);
-  } else if (strcmp(command, "/otapin") == 0 || strcmp(command, "/otapuk") == 0 || strcmp(command, "/otaconfirm") == 0 || strcmp(command, "/otacancel") == 0) {
+  } else if (strcmp(command, "/otapin") == 0 || strcmp(command, "/otapuk") == 0 || strcmp(command, "/otaconfirm") == 0 || strcmp(command, "/otacancel") == 0 || strcmp(command, "/otaconfirmdelete") == 0 || strcmp(command, "/reverse") == 0) {
     ota->handleOTACommand(command, param);
   }
 #endif
@@ -1017,7 +984,7 @@ void checkConnectionStability() {
 #ifdef KISS_HAS_LTE
     // Activar fallback a LTE
     Serial.println("📡 Activando fallback LTE...");
-    if (lte.powerOn() && lte.connect()) {
+    if (lte.powerOn()) {
       Serial.println("✅ LTE activado como fallback");
       currentConnection = CONN_LTE;
       stats.lteActivations++;
@@ -1053,10 +1020,10 @@ void checkConnectionStability() {
                        "✅ WiFi restaurado",
                        KissTelegram::PRIORITY_HIGH);
     }
-    // Verificar que LTE sigue conectado
+    // Verificar que LTE sigue operativo
     else if (!lte.isConnected()) {
-      Serial.println("\n⚠️ LTE desconectado, intentando reconectar...");
-      if (!lte.connect()) {
+      Serial.println("\n⚠️ LTE desconectado, verificando estado...");
+      if (!lte.powerOn()) {
         Serial.println("❌ LTE no disponible");
         currentConnection = CONN_NONE;
       }
@@ -1107,9 +1074,8 @@ void checkConnectionStability() {
 void loop() {
 
 #ifdef KISS_HAS_LTE
-  // Procesar URCs y keepalive LTE
+  // Procesar URCs del módulo LTE
   lte.loop();
-  lte.keepalive();
 #endif
 
 #ifdef KISS_HAS_OTA

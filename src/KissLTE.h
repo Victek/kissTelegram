@@ -1,17 +1,32 @@
 // KissLTE.h
 // Vicente Soriano - victek@gmail.com
-// Sistema de conexión LTE con módulo Quectel EC200A-EU-HA
-// SSL/TLS nativo, Cat-1 LTE, comandos AT+QSSL*
-// GNSS integrado (GPS/Galileo/GLONASS/BeiDou)
+// Gestor LTE genérico con detección automática de módulo
+// Soporta: Quectel EC200A, SIMCOM A7672E/A7682E
+// Auto-detección: AT+GMM (respuesta rápida=SIMCOM, lenta=Quectel)
 
 #ifndef KISS_LTE_H
 #define KISS_LTE_H
 
-#include "kiss_setup.h"
+#include "Kiss_setup.h"
 #include "KissClient.h"
+#include "modules/KissLTEModule.h"
 #include <HardwareSerial.h>
 #include <Preferences.h>
 
+// Forward declarations
+class QuectelModule;
+class SIMCOMModule;
+
+/**
+ * @brief Gestor principal LTE con lazy initialization
+ *
+ * Características:
+ * - Singleton pattern
+ * - Lazy init: begin() solo configura pines, NO enciende módulo
+ * - Auto-detección: powerOn() detecta Quectel/SIMCOM
+ * - Delegación: Todos los comandos AT van al módulo específico
+ * - Control hardware: STATUS_PIN, RESET_PIN, PWRKEY, DTR
+ */
 class KissLTE : public KissClient {
 public:
   // Singleton pattern
@@ -22,53 +37,88 @@ public:
 
   // Estados de conexión
   enum ConnectionState {
-    STATE_OFF,
-    STATE_POWERING_ON,
-    STATE_INITIALIZING,
-    STATE_REGISTERING,
-    STATE_CONNECTED,
-    STATE_ERROR
+    STATE_OFF,            // Módulo apagado físicamente (STATUS=LOW)
+    STATE_POWERING_ON,    // Iniciando encendido
+    STATE_INITIALIZING,   // Respondiendo a comandos AT
+    STATE_REGISTERING,    // Buscando red
+    STATE_CONNECTED,      // Conectado y con IP
+    STATE_ERROR           // Error crítico
   };
 
-  // Calidad de señal
-  enum SignalQuality {
-    SIGNAL_NONE,
-    SIGNAL_POOR,
-    SIGNAL_FAIR,
-    SIGNAL_GOOD,
-    SIGNAL_EXCELLENT
-  };
-
-  // ========== INICIALIZACIÓN Y CONTROL ==========
+  // ========== INICIALIZACIÓN (LAZY) ==========
+  /**
+   * @brief Prepara hardware SIN encender módulo
+   * @param serial Puerto serial (por defecto Serial1)
+   * @param rxPin GPIO RX
+   * @param txPin GPIO TX
+   * @param pwrKeyPin GPIO PWRKEY
+   * @param statusPin GPIO STATUS (HIGH=ON, LOW=OFF)
+   * @param resetPin GPIO RESET (opcional)
+   * @param dtrPin GPIO DTR para sleep (opcional)
+   * @return true si se configuró correctamente
+   */
   bool begin(HardwareSerial* serial = &Serial1,
              int rxPin = KISS_LTE_RX_PIN,
              int txPin = KISS_LTE_TX_PIN,
              int pwrKeyPin = KISS_LTE_PWRKEY_PIN,
-             int dtrPin = -1);
+             int statusPin = KISS_LTE_STATUS_PIN,
+             int resetPin = KISS_LTE_RESET_PIN,
+             int dtrPin = KISS_LTE_DTR_PIN);
 
+  /**
+   * @brief Limpia recursos y apaga módulo
+   */
   void end();
+
+  // ========== CONTROL DE HARDWARE ==========
+  /**
+   * @brief Enciende módulo y auto-detecta tipo (SIMCOM/Quectel)
+   * @return true si encendió y detectó correctamente
+   */
   bool powerOn();
+
+  /**
+   * @brief Apaga módulo físicamente (pulso PWRKEY + verificación STATUS)
+   * @return true si se apagó correctamente
+   */
   bool powerOff();
-  bool reset();
 
-  // ========== LOOP PRINCIPAL - LLAMAR EN loop() ==========
-  void loop();                        // Procesa URCs, keepalive, health check
-
-  // ========== WATCHDOG Y RECOVERY ==========
-  bool softReset();
+  /**
+   * @brief Reset completo del módulo
+   * @return true si se reseteó correctamente
+   */
   bool hardReset();
-  bool recoveryReset();
 
+  /**
+   * @brief Verifica si el módulo está encendido físicamente
+   * @return true si STATUS_PIN = HIGH
+   */
+  bool isHardwarePowered();
+
+  /**
+   * @brief Verifica si el hardware LTE está disponible
+   * @return true si el módulo respondió alguna vez
+   */
+  bool isHardwareAvailable() const;
+
+  // ========== LOOP Y MANTENIMIENTO ==========
+  /**
+   * @brief Loop principal - procesa URCs y mantiene conexión
+   * Llamar desde Arduino loop()
+   */
+  void loop();
+
+  /**
+   * @brief Health check del módulo
+   * @return true si el módulo responde
+   */
   bool healthCheck();
-  void updateHealthStatus();
-  bool isHealthy();
-  unsigned long getLastSuccessfulComm();
-  void resetHealthMonitor();
 
-  // ========== URCs Y RECONEXIÓN ==========
-  void processURCs();                 // Procesar mensajes no solicitados
-  bool ensureConnected();             // Verificar y reconectar si necesario
-  bool checkAndRecover();             // Recovery completo
+  /**
+   * @brief Asegura que la conexión está activa
+   * @return true si conectado o reconectó exitosamente
+   */
+  bool ensureConnected();
 
   // ========== MÉTODOS VIRTUALES KissClient ==========
   bool connectToTelegram() override;
@@ -97,7 +147,6 @@ public:
   // ========== POWER MANAGEMENT ==========
   bool setPowerMode(KissClientPowerMode mode) override;
   KissClientPowerMode getPowerMode() override;
-  int getCurrentConsumption() override;
 
   // ========== INFORMACIÓN ==========
   const char* getClientType() override;
@@ -111,76 +160,32 @@ public:
   void resetErrorCount() override;
 
   // ========== MÉTODOS ESPECÍFICOS LTE ==========
-  bool connect();
-  ConnectionState getState();
+  ConnectionState getState() { return _state; }
+  const char* getStateString();
+  const char* getModuleName();
 
-  // ========== COMANDOS AT BÁSICOS ==========
-  bool sendATCommand(const char* cmd, const char* expectedResponse = "OK",
-                     unsigned long timeout = 1000);
-  bool sendATCommand(const char* cmd, char* response, size_t responseSize,
-                     unsigned long timeout = 1000);
-
-  // ========== CONFIGURACIÓN RED ==========
+  /**
+   * @brief Configura APN para datos móviles
+   */
   bool setAPN(const char* apn, const char* user = "", const char* pass = "");
-  bool setPIN(const char* pin);
-  bool checkPIN();
-  bool unlockSIM();
 
-  // ========== INFORMACIÓN MÓDULO ==========
+  /**
+   * @brief Obtiene IMEI del módulo
+   */
   bool getIMEI(char* imei, size_t size);
-  bool getICCID(char* iccid, size_t size);
+
+  /**
+   * @brief Obtiene operador de red
+   */
   bool getOperator(char* operatorName, size_t size);
 
-  // ========== CALIDAD SEÑAL ==========
-  SignalQuality getSignalQuality();
-  bool checkNetworkRegistration();
-
-  // ========== TCP/IP ==========
-  bool openTCPConnection(const char* host, int port);
-  bool closeTCPConnection();
-  bool isTCPConnected();
-
-  int tcpWrite(const uint8_t* data, size_t len);
-  int tcpRead(uint8_t* buffer, size_t len);
-  int tcpAvailable();
-
-  // ========== SSL MEJORADO ==========
-  bool openSSLConnectionWithRetry(const char* host, int port, int maxRetries = 3);
-  bool closeSSLConnectionFast();
-  bool querySSLState();
-  void sendKeepalive();
-
-  // ========== DIAGNÓSTICOS SSL ==========
-  void logLastError();
-  void logSSLError(int err);
-
-  // ========== GNSS (GPS/Galileo/GLONASS/BeiDou) ==========
+  // ========== GNSS (si el módulo lo soporta) ==========
   bool initGNSS();
-  bool getGNSSLocation(float* lat, float* lon, float* alt = nullptr, float* speed = nullptr);
+  bool getGNSSLocation(float* lat, float* lon, float* alt = nullptr);
   void stopGNSS();
-  bool enableAGPS();
-
-  // ========== DIAGNÓSTICOS LTE ==========
-  void printStatus();
-  void printModuleInfo();
-  const char* getStateString();
 
   // ========== CONFIGURACIÓN ==========
   void setDebug(bool enable);
-  void setTimeout(unsigned long timeout);
-  unsigned long getTimeout();
-
-  // ========== ESTADÍSTICAS SLEEP/ACTIVO ==========
-  unsigned long getTimeInSleepMode();
-  unsigned long getTimeInActiveMode();
-  unsigned long getCurrentModeTime();
-  float getSleepEfficiency();
-  void resetPowerStatistics();
-
-  // ========== HELPERS ==========
-  bool waitForResponse(const char* expected, unsigned long timeout = 1000);
-  void clearSerialBuffer();
-  void keepalive();
 
 private:
   KissLTE();
@@ -189,112 +194,66 @@ private:
   KissLTE(const KissLTE&) = delete;
   KissLTE& operator=(const KissLTE&) = delete;
 
-  // ========== VARIABLES HARDWARE ==========
+  // ========== HARDWARE ==========
   HardwareSerial* _serial;
   int _rxPin;
   int _txPin;
   int _pwrKeyPin;
+  int _statusPin;
+  int _resetPin;
   int _dtrPin;
 
-  // ========== VARIABLES ESTADO ==========
+  // ========== MÓDULO DINÁMICO ==========
+  KissLTEModule* _module = nullptr;  // Puntero al módulo específico (Quectel o SIMCOM)
+  bool _moduleDetected = false;
+
+  // ========== ESTADO ==========
   ConnectionState _state;
   bool _initialized;
-  bool _powered;
   bool _debug;
-  unsigned long _timeout;
-  unsigned long _lastActivityTime;
+  bool _hardwareAvailable;  // true si el módulo respondió alguna vez
+  int _consecutiveFailures;  // Contador de fallos consecutivos
+  static const int MAX_CONSECUTIVE_FAILURES = 3;  // Máximo de fallos antes de deshabilitar
 
-  // ========== VARIABLES SEGURIDAD ==========
-  bool _secureMode;
-
-  // ========== VARIABLES RED ==========
+  // ========== CONFIGURACIÓN RED ==========
   char _apn[64];
   char _apnUser[32];
   char _apnPass[32];
-  char _pin[8];
-  bool _pinRequired;
-  bool _tcpConnected;
-  bool _pdpDeactivated;
-
-  // ========== VARIABLES INFORMACIÓN ==========
-  char _imei[16];
-  char _iccid[24];
-  char _operator[32];
-  int _signalStrength;
-  char _moduleModel[32];
-
-  // ========== SSL/TLS QUECTEL ==========
-  int _sslContextId;
-  bool _sslConfigured;
-  bool _sslConnected;
-
-  // ========== VARIABLES WATCHDOG ==========
-  unsigned long _lastSuccessfulComm;
-  unsigned long _lastHealthCheck;
-  int _healthCheckFailures;
-  static const int MAX_HEALTH_FAILURES = 3;
-  unsigned long _lastKeepalive;
-  static const unsigned long KEEPALIVE_INTERVAL = 300000;  // 5 min
-
-  // ========== ESTADÍSTICAS POWER ==========
-  unsigned long _timeInSleep;
-  unsigned long _timeInActive;
-  unsigned long _lastModeChange;
-  bool _isInSleepMode;
-
-  // ========== BUFFER COMUNICACIÓN ==========
-  static const size_t BUFFER_SIZE = 1024;
-  char _buffer[BUFFER_SIZE];
 
   // ========== NVS ==========
   Preferences _nvs;
 
   // ========== MÉTODOS PRIVADOS ==========
-  bool pulsePoweKey();
-  bool waitForModuleReady(unsigned long timeout = 10000);
-  bool initializeModule();
-  bool configureNetwork();
-  bool activatePDP();
+  /**
+   * @brief Detecta tipo de módulo (SIMCOM o Quectel)
+   * @return true si se detectó correctamente
+   */
+  bool detectModule();
 
+  /**
+   * @brief Crea instancia del módulo específico
+   */
+  bool createModule();
+
+  /**
+   * @brief Libera módulo actual
+   */
+  void destroyModule();
+
+  /**
+   * @brief Carga credenciales desde NVS
+   */
   bool loadCredentialsFromNVS();
+
+  /**
+   * @brief Guarda credenciales en NVS
+   */
   bool saveCredentialsToNVS();
 
+  /**
+   * @brief Actualiza estado interno
+   */
   void setState(ConnectionState newState);
-  void updateSignalStrength();
-
-  bool enterSleepMode(int mode);
-  bool setFunctionalityLevel(int level);
-  bool powerDownModule();
-
-  void updatePowerStatistics();
-
-  void setDTR(bool active);
-  void wakeFromSleep();
-
-  // Helpers AT
-  int readLine(char* buffer, size_t size, unsigned long timeout);
-  bool expectResponse(const char* expected, unsigned long timeout = 1000);
-  void flushSerial();
-  bool readATResponse(const char* cmd, char* response, size_t responseSize, unsigned long timeout);
-
-  bool detectModule();
-  const char* getModuleName();
-
-  // ========== SSL/TLS NATIVO ==========
-  bool configureSSL();
-  bool openSSLConnection(const char* host, int port);
-  bool closeSSLConnection();
-  int sslWrite(const uint8_t* data, size_t len);
-  int sslRead(uint8_t* buffer, size_t len);
-  int sslAvailable();
-
-  // ========== URC HANDLERS ==========
-  void handleSSLRecvURC(int clientID);
-  void handleSSLClosedURC(int clientID);
-  void handlePDPDeactURC(int contextID);
-
-  // ========== GNSS HELPERS ==========
-  float nmeaToDecimal(const char* nmea);
 };
 
 #endif // KISS_LTE_H

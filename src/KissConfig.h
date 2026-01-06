@@ -83,6 +83,15 @@ public:
     return setInt("msg_interval", ms);
   }
 
+  // 📡 CONFIGURACIÓN DE RED (KissNet)
+  // Modos: 0=AUTO (WiFi→LTE), 1=WIFI_ONLY, 2=LTE_ONLY
+  int getNetworkMode() {
+    return getInt("net_mode", 0);  // Por defecto AUTO
+  }
+  bool setNetworkMode(int mode) {
+    return setInt("net_mode", mode);
+  }
+
   // 🔥 TIMESTAMPS DE MANTENIMIENTO
   unsigned long getLastCleanupTime() {
     return getULong("last_cleanup", 0);
@@ -133,6 +142,13 @@ public:
     KISS_LOGF(" - Reintentos: %d", getMessageRetryAttempts());
     KISS_LOGF(" - WiFi timeout: %dms", getWiFiReconnectTimeout());
     KISS_LOGF(" - Intervalo mensajes: %dms", getMinMessageInterval());
+
+    const char* netModes[] = {"AUTO (WiFi→LTE)", "WIFI ONLY", "LTE ONLY"};
+    int mode = getNetworkMode();
+    if (mode >= 0 && mode <= 2) {
+      KISS_LOGF(" - Modo de red: %s", netModes[mode]);
+    }
+
     KISS_LOGF(" - Último cleanup: hace %lu seg", (millis() - getLastCleanupTime()) / 1000);
     KISS_LOGF(" - Último save: hace %lu seg", (millis() - getLastSaveTime()) / 1000);
     KISS_LOGF(" - Notificaciones: %s", getErrorNotifications() ? "ON" : "OFF");

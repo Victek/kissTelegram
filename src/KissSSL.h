@@ -38,7 +38,6 @@ public:
   // ========== POWER MANAGEMENT ==========
   bool setPowerMode(KissClientPowerMode mode) override;
   KissClientPowerMode getPowerMode() override;
-  int getCurrentConsumption() override;
 
   // ========== INFORMACIÓN ==========
   const char* getClientType() override;

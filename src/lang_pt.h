@@ -60,7 +60,7 @@
 #define LANG_OTA_CANCEL "🛑 PROCESSO CANCELADO\n\nA atualização foi cancelada.\nNenhuma alteração foi feita no firmware.\n\nO sistema retorna à operação normal."
 #define LANG_OTA_FLASH "🔥 GRAVANDO FIRMWARE\n\nGravando na memória flash...\nIsso pode levar vários minutos.\n\n⚠️ NÃO DESCONECTE O DISPOSITIVO"
 #define LANG_OTA_FLASH_F "❌ ERRO DE GRAVAÇÃO\n\nA gravação do firmware falhou.\nIniciando rollback automático...\n\nO dispositivo reiniciará com o firmware anterior.\n\nNão desligue o dispositivo."
-#define LANG_OTA_VALIDATED "✅ FIRMWARE VALIDADO\n\nA atualização foi concluída com sucesso.\nBackup excluído.\n\nO sistema retorna à operação normal.\nMensagens pendentes serão processadas agora. (Você pode ignorar a mensagem de validação anterior)"
+#define LANG_OTA_VALIDATED "✅ FIRMWARE VALIDADO\n\nA atualização foi concluída com sucesso.\nBackup anterior salvo (use /reverse para restaurar).\n\nO sistema retorna à operação normal.\nMensagens pendentes serão processadas agora."
 #define LANG_OTA_NONVALID "❌ ARQUIVO INVÁLIDO\n\nNome de arquivo inválido.\n\nEnvie um arquivo de firmware .bin"
 #define LANG_OTA_WRONG_EXT "❌ ARQUIVO INVÁLIDO\n\nO arquivo deve ser .bin\nRecebido: %s\n\nEnvie um arquivo de firmware válido."
 #define LANG_OTA_TOO_BIG "❌ ARQUIVO MUITO GRANDE\n\nTamanho: %.2f MB\nMáximo: %.2f MB\n\nEnvie um arquivo menor."

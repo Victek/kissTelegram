@@ -31,6 +31,8 @@ public:
     OTA_FLASH_PROGRESS,     // Progreso flash
     OTA_VALIDATING,         // Validando nuevo firmware (60s timeout)
     OTA_ROLLBACK,           // Haciendo rollback
+    OTA_REVERSE,            // Revirtiendo a firmware anterior (comando /reverse)
+    OTA_WAIT_NEWFIRMOK,     // Esperando confirmación tras /reverse
     OTA_CLEANUP,            // Limpiando archivos temporales
     OTA_COMPLETE            // Completado OK
   };
@@ -101,6 +103,10 @@ private:
   bool initPSRAMBuffer();
   void freePSRAMBuffer();
 
+  // ========== ARCHIVOS OTA ==========
+  static constexpr const char* BIN_ORIGINAL = "/bin_original.bin";  // Backup firmware actual
+  static constexpr const char* BIN_NUEVO = "/bin_nuevo.bin";        // Nuevo firmware descargado
+
   // ========== TIMEOUTS ==========
   static const uint32_t BOOT_MAGIC = 0xCAFEBABE;
   static const int BOOT_VALIDATION_TIMEOUT = 60000;        // 60 segundos para /otaok
@@ -141,6 +147,7 @@ private:
 
   // ========== MÉTODOS VERIFICACIÓN ==========
   bool verifyChecksum();
+  bool saveFirmwareToFS();  // Guarda firmware de PSRAM a FS como bin_nuevo.bin
   uint32_t calculateCRC32(File& file);
 
   // ========== MÉTODOS FLASH DIRECTO ==========
@@ -161,12 +168,14 @@ private:
   void validateBootAfterOTA();
   void handleBootLoopRecovery();
   void emergencyRollback();
+  bool reverseFirmware();  // Revierte a firmware anterior usando bin_original.bin
 
   // ========== MÉTODOS CLEANUP ==========
   void cleanupFiles();
   void cleanupOldBackups();
 
   // ========== HELPERS ==========
+  bool copyCurrentToFactory();  // Copia firmware actual a factory (app0) para permitir futuros OTAs
   void sendOTAMessage(const char* text);
   void transitionState(OTAState newState);
   const char* getStateName(OTAState state);

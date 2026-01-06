@@ -60,7 +60,7 @@
 #define LANG_OTA_CANCEL "🛑 进程已取消\n\n更新已被取消。\n固件未进行任何更改。\n\n系统恢复正常运行。"
 #define LANG_OTA_FLASH "🔥 正在刷写固件\n\n正在写入闪存...\n这可能需要几分钟。\n\n⚠️ 请勿断开设备连接"
 #define LANG_OTA_FLASH_F "❌ 刷写错误\n\n固件写入失败。\n正在启动自动回滚...\n\n设备将以之前的固件重新启动。\n\n请勿关闭设备。"
-#define LANG_OTA_VALIDATED "✅ 固件已验证\n\n更新已成功完成。\n备份已删除。\n\n系统恢复正常运行。\n待处理的消息现在将被处理。（您可以忽略之前的验证消息）"
+#define LANG_OTA_VALIDATED "✅ 固件已验证\n\n更新已成功完成。\n已保存先前的备份（使用 /reverse 恢复）。\n\n系统恢复正常运行。\n待处理的消息现在将被处理。"
 #define LANG_OTA_NONVALID "❌ 无效文件\n\n无效的文件名。\n\n请发送 .bin 固件文件"
 #define LANG_OTA_WRONG_EXT "❌ 无效文件\n\n文件必须是 .bin\n收到：%s\n\n请发送有效的固件文件。"
 #define LANG_OTA_TOO_BIG "❌ 文件过大\n\n大小：%.2f MB\n最大：%.2f MB\n\n请发送较小的文件。"

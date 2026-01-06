@@ -51,7 +51,6 @@ public:
   // ========== POWER MANAGEMENT ==========
   virtual bool setPowerMode(KissClientPowerMode mode) = 0;
   virtual KissClientPowerMode getPowerMode() = 0;
-  virtual int getCurrentConsumption() = 0;  // Consumo estimado en mA
 
   // ========== INFORMACIÓN ==========
   virtual void printInfo() = 0;

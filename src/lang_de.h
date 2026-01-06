@@ -60,7 +60,7 @@
 #define LANG_OTA_CANCEL "🛑 PROZESS ABGEBROCHEN\n\nDas Update wurde abgebrochen.\nEs wurden keine Änderungen an der Firmware vorgenommen.\n\nDas System kehrt zum normalen Betrieb zurück."
 #define LANG_OTA_FLASH "🔥 FIRMWARE WIRD GEFLASHT\n\nSchreibe in Flash-Speicher...\nDies kann einige Minuten dauern.\n\n⚠️ TRENNEN SIE DAS GERÄT NICHT"
 #define LANG_OTA_FLASH_F "❌ FLASH-FEHLER\n\nDas Schreiben der Firmware ist fehlgeschlagen.\nStarte automatischen Rollback...\n\nDas Gerät startet mit der vorherigen Firmware neu.\n\nSchalten Sie das Gerät nicht aus."
-#define LANG_OTA_VALIDATED "✅ FIRMWARE VALIDIERT\n\nDas Update wurde erfolgreich abgeschlossen.\nBackup gelöscht.\n\nDas System kehrt zum normalen Betrieb zurück.\nAusstehende Nachrichten werden jetzt verarbeitet. (Sie können die vorherige Validierungsnachricht ignorieren)"
+#define LANG_OTA_VALIDATED "✅ FIRMWARE VALIDIERT\n\nDas Update wurde erfolgreich abgeschlossen.\nVorheriges Backup gespeichert (verwenden Sie /reverse zum Wiederherstellen).\n\nDas System kehrt zum normalen Betrieb zurück.\nAusstehende Nachrichten werden jetzt verarbeitet."
 #define LANG_OTA_NONVALID "❌ UNGÜLTIGE DATEI\n\nUngültiger Dateiname.\n\nSenden Sie eine .bin-Firmware-Datei"
 #define LANG_OTA_WRONG_EXT "❌ UNGÜLTIGE DATEI\n\nDie Datei muss .bin sein\nEmpfangen: %s\n\nSenden Sie eine gültige Firmware-Datei."
 #define LANG_OTA_TOO_BIG "❌ DATEI ZU GROSS\n\nGröße: %.2f MB\nMaximum: %.2f MB\n\nSenden Sie eine kleinere Datei."
