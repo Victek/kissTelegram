@@ -118,6 +118,7 @@ private:
     uint32_t lastBootTime;
     bool otaInProgress;
     bool firmwareValid;
+    bool reverseInProgress;  // Bandera para /reverse - evita reprocesar comando
     char backupPath[64];
   };
 

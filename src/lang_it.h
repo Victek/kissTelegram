@@ -88,6 +88,7 @@
 #define LANG_OTA_FS_ACCESS_ERROR "❌ Errore di accesso al file system"
 #define LANG_OTA_PREPARING_FUTURE "🔄 Preparazione sistema per aggiornamenti futuri...\nRiavvio..."
 #define LANG_OTA_NO_PENDING "❌ Nessun OTA in sospeso"
+#define LANG_OTA_NO_VALIDATION "❌ /otaok ricevuto ma nessuna validazione in sospeso, ritorno alla modalità normale"
 #define LANG_OTA_REVERSE_IDLE_ONLY "❌ Puoi usare /reverse solo quando il sistema è in IDLE"
 #define LANG_OTA_REVERSING "🔄 Ritorno al firmware precedente...\n⚠️ NON SPEGNERE"
 #define LANG_OTA_REVERSE_COMPLETE "✅ Reversione completata - Riavvio"

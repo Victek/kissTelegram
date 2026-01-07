@@ -44,7 +44,12 @@ KissOTA::KissOTA(KissTelegram* botInstance, KissCredentials* credsInstance) {
             psramBufferSize / 1048576.0);
   // Verificar si venimos de OTA interrumpido o boot loop
   if (loadBootFlags()) {
-    if (bootFlags.otaInProgress) {
+    if (bootFlags.reverseInProgress) {
+      // Venimos de un /reverse completado - solo limpiar flag sin procesar comando
+      KISS_LOG("✅ /reverse completado - limpiando bandera");
+      bootFlags.reverseInProgress = false;
+      saveBootFlags();
+    } else if (bootFlags.otaInProgress) {
       KISS_CRITICAL("⚠️ OTA INTERRUMPIDO detectado");
       handleInterruptedOTA();
     } else if (isFirstBootAfterOTA()) {
@@ -374,7 +379,7 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
       otaStartTime = 0;
     } else {
       KISS_CRITICAL("❌ /otaok recibido pero no hay validación pendiente");
-      sendOTAMessage(LANG_OTA_NO_PENDING);
+      bot->sendMessage(credentials->getChatId(), LANG_OTA_NO_VALIDATION);
     }
   }
 
@@ -411,7 +416,21 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
     sendOTAMessage(LANG_OTA_REVERSING);
     transitionState(OTA_REVERSE);
 
+    // Marcar en bootFlags que estamos haciendo un /reverse
+    // Esto evita que se vuelva a procesar el comando tras el reinicio
+    bootFlags.reverseInProgress = true;
+    saveBootFlags();
+
     if (reverseFirmware()) {
+      // Borrar bin_original.bin tras reversión exitosa
+      if (KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
+        if (KISS_FS.exists(BIN_ORIGINAL)) {
+          KISS_FS.remove(BIN_ORIGINAL);
+          KISS_LOG("🗑️ bin_original.bin eliminado tras reversión exitosa");
+        }
+        KISS_FS.end();
+      }
+
       sendOTAMessage(LANG_OTA_REVERSE_COMPLETE);
       SAFE_DELAY(2000);
       ESP.restart();
@@ -751,6 +770,7 @@ bool KissOTA::restoreFromBackup() {
   bootFlags.magic = BOOT_MAGIC;
   bootFlags.otaInProgress = false;
   bootFlags.firmwareValid = true;
+  bootFlags.reverseInProgress = false;
   // Mantener backupPath para limpieza posterior
   saveBootFlags();
   KISS_CRITICAL("✅ Vuelta atrás configurada - Reiniciando...");
@@ -1188,6 +1208,7 @@ bool KissOTA::flashNewFirmware() {
   bootFlags.magic = BOOT_MAGIC;
   bootFlags.otaInProgress = false;
   bootFlags.firmwareValid = false;
+  bootFlags.reverseInProgress = false;
   bootFlags.bootCount = 1;
   saveBootFlags();
 
@@ -1321,11 +1342,12 @@ void KissOTA::saveBootFlags() {
   prefs.putUInt("lastBoot", bootFlags.lastBootTime);
   prefs.putBool("otaProgress", bootFlags.otaInProgress);
   prefs.putBool("fwValid", bootFlags.firmwareValid);
+  prefs.putBool("revProgress", bootFlags.reverseInProgress);
   prefs.putString("backup", bootFlags.backupPath);
   prefs.end();
 
-  KISS_LOGF("✅ Banderas de arranque guardadas (magic=0x%X, otaInProgress=%d, fwValid=%d)\n",
-            bootFlags.magic, bootFlags.otaInProgress, bootFlags.firmwareValid);
+  KISS_LOGF("✅ Banderas de arranque guardadas (magic=0x%X, otaInProgress=%d, fwValid=%d, revProgress=%d)\n",
+            bootFlags.magic, bootFlags.otaInProgress, bootFlags.firmwareValid, bootFlags.reverseInProgress);
 }
 
 bool KissOTA::loadBootFlags() {
@@ -1343,6 +1365,7 @@ bool KissOTA::loadBootFlags() {
     bootFlags.lastBootTime = 0;
     bootFlags.otaInProgress = false;
     bootFlags.firmwareValid = true;
+    bootFlags.reverseInProgress = false;
     bootFlags.backupPath[0] = '\0';
     saveBootFlags();
     return false;
@@ -1352,8 +1375,9 @@ bool KissOTA::loadBootFlags() {
   bootFlags.lastBootTime = prefs.getUInt("lastBoot", 0);
   bootFlags.otaInProgress = prefs.getBool("otaProgress", false);
   bootFlags.firmwareValid = prefs.getBool("fwValid", true);
+  bootFlags.reverseInProgress = prefs.getBool("revProgress", false);
 
-  size_t len = prefs.getString("backup", bootFlags.backupPath, 
+  size_t len = prefs.getString("backup", bootFlags.backupPath,
                                sizeof(bootFlags.backupPath));
   if (len == 0) {
     bootFlags.backupPath[0] = '\0';  // Vacío si no existe
@@ -1367,6 +1391,7 @@ bool KissOTA::loadBootFlags() {
 void KissOTA::clearBootFlags() {
   bootFlags.otaInProgress = false;
   bootFlags.firmwareValid = true;
+  bootFlags.reverseInProgress = false;
   bootFlags.bootCount = 0;
   bootFlags.backupPath[0] = '\0';
   saveBootFlags();
@@ -1626,9 +1651,12 @@ bool KissOTA::reverseFirmware() {
     }
   }
 
-  // Marcar flags para validación
-  bootFlags.firmwareValid = false;
-  bootFlags.bootCount = 1;
+  // NO marcar para validación en /reverse manual
+  // El usuario ejecutó /reverse manualmente, no es un OTA automático
+  // Por tanto, el firmware revertido se considera válido inmediatamente
+  bootFlags.firmwareValid = true;
+  bootFlags.bootCount = 0;
+  bootFlags.backupPath[0] = '\0';  // Limpiar path del backup
   saveBootFlags();
 
   KISS_CRITICAL("✅ Reversión completada");

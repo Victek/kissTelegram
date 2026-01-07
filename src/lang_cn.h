@@ -88,6 +88,7 @@
 #define LANG_OTA_FS_ACCESS_ERROR "❌ 访问文件系统错误"
 #define LANG_OTA_PREPARING_FUTURE "🔄 正在为未来更新准备系统...\n重启中..."
 #define LANG_OTA_NO_PENDING "❌ 没有待处理的 OTA"
+#define LANG_OTA_NO_VALIDATION "❌ 已收到 /otaok 但没有待处理的验证，返回正常模式"
 #define LANG_OTA_REVERSE_IDLE_ONLY "❌ 只有在系统处于 IDLE 状态时才能使用 /reverse"
 #define LANG_OTA_REVERSING "🔄 正在恢复到先前固件...\n⚠️ 请勿关闭电源"
 #define LANG_OTA_REVERSE_COMPLETE "✅ 恢复完成 - 重启中"
