@@ -131,7 +131,7 @@ inline bool KISS_CHECK_FS_HEALTH() {
 
 // ========== CONFIGURACION VERSION KISSTELEGRAM ==========
 // ⚠️ PARA CAMBIAR LA VERSIÓN: Edita solo esta línea ⬇️
-#define KISS_SUITE_VERSION "1.1.0"
+#define KISS_SUITE_VERSION "1.1.1"
 // ⚠️ Fin de configuración de versión ⬆️
 
 // Helper para obtener versión
