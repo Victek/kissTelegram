@@ -135,12 +135,7 @@ bool KissOTA::startOTA() {
     if (KISS_FS.exists(BIN_ORIGINAL)) {
       KISS_FS.end();
       KISS_CRITICAL("⚠️ Existe backup anterior (bin_original.bin)");
-      sendOTAMessage("⚠️ ADVERTENCIA: Existe backup anterior\n\n"
-                     "Si continúas se BORRARÁ el backup actual.\n\n"
-                     "Opciones:\n"
-                     "• /otacancel - Cancelar OTA\n"
-                     "• /reverse - Restaurar backup anterior\n"
-                     "• /otaconfirmdelete - Borrar backup y continuar OTA");
+      sendOTAMessage(LANG_OTA_BACKUP_EXISTS);
       // Desactivar modes antes de salir
       bot->setOTAMode(false);
       bot->setMaintenanceMode(false);
@@ -265,13 +260,13 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
       if (KISS_FS.exists(BIN_ORIGINAL)) {
         KISS_FS.remove(BIN_ORIGINAL);
         KISS_LOG("🗑️ Backup anterior (bin_original.bin) eliminado");
-        bot->sendMessage(credentials->getChatId(), "✅ Backup eliminado - Puedes iniciar /ota ahora");
+        bot->sendMessage(credentials->getChatId(), LANG_OTA_BACKUP_DELETED);
       } else {
-        bot->sendMessage(credentials->getChatId(), "ℹ️ No hay backup para eliminar");
+        bot->sendMessage(credentials->getChatId(), LANG_OTA_NO_BACKUP_DELETE);
       }
       KISS_FS.end();
     } else {
-      bot->sendMessage(credentials->getChatId(), "❌ Error accediendo al sistema de archivos");
+      bot->sendMessage(credentials->getChatId(), LANG_OTA_FS_ACCESS_ERROR);
     }
 
     // Resetear a IDLE para permitir nuevo /ota
@@ -285,7 +280,7 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
   // /otacancel - Cancelar OTA
   else if (strcmp(command, "/otacancel") == 0) {
     if (currentState == OTA_IDLE) {
-      sendOTAMessage(LANG_OTA_PR_INACTI);
+      bot->sendMessage(credentials->getChatId(), LANG_OTA_PR_INACTI);
       return;
     }
 
@@ -360,7 +355,7 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
       if (running && factory && running != factory) {
         // Copiar firmware actual a factory y reiniciar desde factory
         if (copyCurrentToFactory()) {
-          sendOTAMessage("🔄 Preparando sistema para futuras actualizaciones...\nReiniciando...");
+          sendOTAMessage(LANG_OTA_PREPARING_FUTURE);
           SAFE_DELAY(2000);
           ESP.restart();
         }
@@ -379,7 +374,7 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
       otaStartTime = 0;
     } else {
       KISS_CRITICAL("❌ /otaok recibido pero no hay validación pendiente");
-      sendOTAMessage("❌ No hay OTA pendiente");
+      sendOTAMessage(LANG_OTA_NO_PENDING);
     }
   }
 
@@ -389,33 +384,41 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
 
     // Solo permitir si estamos en IDLE (firmware validado funcionando)
     if (currentState != OTA_IDLE) {
-      sendOTAMessage("❌ Solo puedes hacer /reverse cuando el sistema está en IDLE");
+      bot->sendMessage(credentials->getChatId(), LANG_OTA_REVERSE_IDLE_ONLY);
       return;
     }
 
     // Verificar que existe bin_original.bin
     if (!KISS_FS.begin(KISS_FS_FORMAT_ON_FAIL)) {
-      sendOTAMessage("❌ Error accediendo al sistema de archivos");
+      bot->sendMessage(credentials->getChatId(), LANG_OTA_FS_ACCESS_ERROR);
+      KISS_CRITICAL("❌ Error accediendo FS para /reverse");
       return;
     }
 
     if (!KISS_FS.exists(BIN_ORIGINAL)) {
       KISS_FS.end();
-      sendOTAMessage("❌ No hay backup disponible (bin_original.bin no existe)");
+      KISS_CRITICAL("❌ No existe bin_original.bin para /reverse");
+      bot->sendMessage(credentials->getChatId(), LANG_OTA_NO_BACKUP);
       return;
     }
 
     KISS_FS.end();
 
-    sendOTAMessage("🔄 Revirtiendo a firmware anterior...\n⚠️ NO APAGAR");
+    // Activar modo OTA para la reversión
+    bot->setOTAMode(true);
+    bot->setMaintenanceMode(true, "Reversión de firmware");
+
+    sendOTAMessage(LANG_OTA_REVERSING);
     transitionState(OTA_REVERSE);
 
     if (reverseFirmware()) {
-      sendOTAMessage("✅ Reversión completada - Reiniciando");
+      sendOTAMessage(LANG_OTA_REVERSE_COMPLETE);
       SAFE_DELAY(2000);
       ESP.restart();
     } else {
-      sendOTAMessage("❌ Error en reversión - Sistema mantiene firmware actual");
+      sendOTAMessage(LANG_OTA_REVERSE_ERROR);
+      bot->setOTAMode(false);
+      bot->setMaintenanceMode(false);
       transitionState(OTA_IDLE);
     }
   }
@@ -441,11 +444,11 @@ void KissOTA::handleOTACommand(const char* command, const char* param) {
       }
 
       transitionState(OTA_IDLE);
-      sendOTAMessage("✅ Firmware confirmado - Sistema limpio");
+      sendOTAMessage(LANG_OTA_NEWFIRM_CONFIRMED);
       KISS_CRITICAL("🎉 Firmware revertido confirmado - Backup borrado");
     } else {
       KISS_CRITICAL("❌ /newfirmok recibido pero no hay reversión pendiente");
-      sendOTAMessage("❌ No hay reversión pendiente");
+      sendOTAMessage(LANG_OTA_NO_REVERSE_PENDING);
     }
   }
 }
@@ -1497,7 +1500,7 @@ void KissOTA::emergencyRollback() {
   if (KISS_FS.exists(BIN_ORIGINAL)) {
     KISS_FS.end();
     KISS_CRITICAL("✅ Backup encontrado - restaurando...");
-    sendOTAMessage("🔄 Restaurando firmware anterior...");
+    sendOTAMessage(LANG_OTA_RESTORING_PREVIOUS);
 
     if (reverseFirmware()) {
       KISS_CRITICAL("✅ Firmware restaurado - reiniciando");
