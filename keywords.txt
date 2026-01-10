@@ -1,0 +1,61 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+KissTelegram	KEYWORD1
+KissLTE	KEYWORD1
+KissOTA	KEYWORD1
+KissSSL	KEYWORD1
+KissConfig	KEYWORD1
+KissCredentials	KEYWORD1
+KissJson	KEYWORD1
+KissNet	KEYWORD1
+KissTime	KEYWORD1
+KissClient	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+end	KEYWORD2
+sendMessage	KEYWORD2
+sendPhoto	KEYWORD2
+sendDocument	KEYWORD2
+sendLocation	KEYWORD2
+getUpdates	KEYWORD2
+getMessage	KEYWORD2
+processMessage	KEYWORD2
+queueMessage	KEYWORD2
+sendQueuedMessages	KEYWORD2
+connectWiFi	KEYWORD2
+connectLTE	KEYWORD2
+disconnect	KEYWORD2
+isConnected	KEYWORD2
+checkConnection	KEYWORD2
+updateOTA	KEYWORD2
+checkForUpdates	KEYWORD2
+setLanguage	KEYWORD2
+getLanguage	KEYWORD2
+loadConfig	KEYWORD2
+saveConfig	KEYWORD2
+initSSL	KEYWORD2
+getCertificate	KEYWORD2
+syncTime	KEYWORD2
+getTime	KEYWORD2
+parseJson	KEYWORD2
+createJson	KEYWORD2
+enablePowerSave	KEYWORD2
+disablePowerSave	KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+WIFI_MODE	LITERAL1
+LTE_MODE	LITERAL1
+DUAL_MODE	LITERAL1
+PRIORITY_HIGH	LITERAL1
+PRIORITY_NORMAL	LITERAL1
+PRIORITY_LOW	LITERAL1
+PRIORITY_IDLE	LITERAL1
