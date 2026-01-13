@@ -373,7 +373,10 @@ void handleMessage(const char* chat_id, const char* text,
              "/changepin <viejo> <nuevo>\n"
              "/changepuk <viejo> <nuevo>\n"
              "/credentials - Ver credenciales\n"
-             "/resetcredentials CONFIRMAR\n\n"
+             "/resetcredentials CONFIRMAR\n"
+             "/health - Salud del sistema\n"
+             "/eventlog - Ver últimos eventos\n"
+             "/clearlog - Limpiar log eventos\n\n"
 #ifdef KISS_HAS_OTA
              "🔧 OTA:\n"
              "/ota - Iniciar OTA\n"
@@ -891,6 +894,50 @@ void handleMessage(const char* chat_id, const char* text,
                        "⚠️ Esto resetea todas las credenciales\n"
                        "Confirma con: /resetcredentials CONFIRMAR");
     }
+  } else if (strcmp(command, "/eventlog") == 0) {
+    String events = bot->getLastEvents(15);
+    if (events.length() == 0) {
+      bot->sendMessage(chat_id, "📋 Log de eventos vacío");
+    } else {
+      char logMsg[600];
+      snprintf(logMsg, sizeof(logMsg),
+               "📋 ÚLTIMOS EVENTOS\n\n%s\n\n"
+               "💡 Usa /eventlog 30 para ver más",
+               events.c_str());
+      bot->sendMessage(chat_id, logMsg);
+    }
+  } else if (strcmp(command, "/clearlog") == 0) {
+    bot->clearEventLog();
+    bot->sendMessage(chat_id, "🗑️ Log de eventos limpiado");
+  } else if (strcmp(command, "/health") == 0) {
+    // Reporte de salud del sistema
+    unsigned long uptime = (millis() - stats.startTime) / 1000;
+    float errorRate = (stats.messageCount > 0) ?
+                      (stats.errorCount * 100.0f / stats.messageCount) : 0;
+
+    char healthMsg[500];
+    snprintf(healthMsg, sizeof(healthMsg),
+             "🏥 SALUD DEL SISTEMA\n\n"
+             "⏰ Uptime: %luh %lum\n"
+             "📨 Mensajes: %d\n"
+             "❌ Errores: %d (%.2f%%)\n"
+             "💾 Memoria: %d bytes\n"
+             "📊 Power Mode: %d\n"
+             "💾 Cola: %d msgs\n"
+             "🔋 Estado: %s\n\n"
+             "🔍 %s",
+             uptime / 3600, (uptime % 3600) / 60,
+             stats.messageCount,
+             stats.errorCount, errorRate,
+             KissTelegram::getFreeMemory(),
+             bot->getCurrentPowerMode(),
+             bot->getMessagesInFS(),
+             (stats.errorCount == 0) ? "EXCELENTE ✅" :
+             (errorRate < 1.0) ? "BUENO ⚠️" : "REVISAR ❌",
+             (stats.errorCount > 0) ? "Revisa /eventlog para detalles" :
+             "Sin errores detectados");
+
+    bot->sendMessage(chat_id, healthMsg);
   }
 #ifdef KISS_HAS_OTA
   else if (strcmp(command, "/ota") == 0) {
@@ -935,6 +982,9 @@ void sendTestMessage(const char* message) {
     Serial.println("✅ WiFi estabilizado");
   }
 
+  // Registrar estado del socket ANTES de intentar enviar
+  bot->logSocketState("BEFORE_AUTO_MSG");
+
   char fullMessage[300];
   snprintf(fullMessage, sizeof(fullMessage),
            "%s\n\n"
@@ -952,19 +1002,35 @@ void sendTestMessage(const char* message) {
            stats.errorCount,
            stats.fallbackEvents);
 
-  if (bot->sendMessage(credentials.getChatId(), fullMessage, KissTelegram::PRIORITY_NORMAL)) {
+  // Usar versión con diagnóstico
+  SendFailureReason failReason;
+  if (bot->sendMessage(credentials.getChatId(), fullMessage, KissTelegram::PRIORITY_NORMAL, &failReason)) {
     stats.messageCount++;
     stats.lastMessageTime = millis();
     Serial.printf("✅ Mensaje automático %d enviado\n", stats.messageCount);
+
+    // Registrar envío exitoso
+    bot->logEvent("AUTO_MSG_OK", "5min mensaje enviado");
   } else {
     stats.errorCount++;
-    Serial.printf("❌ Error mensaje %d - encolando...\n", stats.messageCount);
+    Serial.printf("❌ Error mensaje %d - Causa: %s\n", stats.messageCount, bot->getFailureReasonText(failReason));
 
-    if (bot->queueMessage(credentials.getChatId(), fullMessage, KissTelegram::PRIORITY_NORMAL)) {
-      Serial.println("📨 Mensaje encolado para reintento");
-    } else {
-      stats.queueFullCount++;
-      Serial.println("❌ Cola llena - mensaje descartado");
+    // Enviar reporte de error con contexto
+    char context[64];
+    snprintf(context, sizeof(context), "Mensaje automático #%d", stats.messageCount);
+    bot->sendErrorReport(credentials.getChatId(), failReason, context);
+
+    // Solo intentar encolar si no fue ya encolado automáticamente
+    if (failReason != SEND_FAIL_RATE_LIMIT &&
+        failReason != SEND_FAIL_WIFI_UNSTABLE &&
+        failReason != SEND_FAIL_CONNECTION) {
+
+      if (bot->queueMessage(credentials.getChatId(), fullMessage, KissTelegram::PRIORITY_NORMAL)) {
+        Serial.println("📨 Mensaje encolado para reintento");
+      } else {
+        stats.queueFullCount++;
+        Serial.println("❌ Cola llena - mensaje descartado");
+      }
     }
   }
 }
@@ -978,6 +1044,7 @@ void checkConnectionStability() {
     stats.wifiDropouts++;
     stats.lastWifiDrop = millis();
     Serial.println("\n⚠️ WiFi DESCONECTADO");
+    bot->logEvent("WIFI_DROP", "Conexión WiFi perdida");
     bot->disable();
     wifiAlreadyStable = false;
 
@@ -1034,6 +1101,7 @@ void checkConnectionStability() {
   // ========== WiFi reconectado en modo WiFi inicial ==========
   if (!wasConnected && isConnected && currentConnection == CONN_WIFI) {
     Serial.println("📡 WiFi reconectado");
+    bot->logEvent("WIFI_RECONNECT", "WiFi restaurado");
     bot->setWifiStable();
     bot->enable();
     wifiAlreadyStable = true;
@@ -1132,6 +1200,13 @@ void loop() {
     }
 
     if (bot->isWifiStable()) {
+      // Registrar evento antes de checkMessages
+      static unsigned long lastCheckLog = 0;
+      if (bot->hasTimePassed(lastCheckLog, 60000)) { // Cada minuto
+        bot->logSocketState("BEFORE_CHECK");
+        lastCheckLog = millis();
+      }
+
       bot->checkMessages(handleMessage);
     }
   }
